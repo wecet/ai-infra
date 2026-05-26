@@ -16,6 +16,7 @@
 *.user
 *.userosscache
 *.sln.docstates
+samples/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
