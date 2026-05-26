@@ -1,0 +1,41 @@
+# Custom
+**/persist/
+**/Persist/
+**/State/
+**/playground.py
+**/playground*
+**/config_values.json
+
+# Visual Studio settings
+.vs/
+*.suo
+*.ntvs*
+
+# User-specific files
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Python cache files
+__pycache__/
+*.pyc
+
+# Python environment
+**/venv/
+**/.venv/
+
+# So files (Will be generated upon package generation)
+*.so
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+*.egg
+*.pem

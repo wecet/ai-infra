@@ -1,0 +1,68 @@
+{
+    "configurations": [
+        {
+            "name": "ExampleModule1",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/modules/ExampleModule1/main.py",
+            "console": "integratedTerminal",
+            "consoleName": "ExampleModule1",
+            "consoleTitle": "ExampleModule1",
+            "justMyCode": false,
+            "stopOnEntry": false,
+            "subProcess": true,
+            "env": {
+                "BASE_PATH_STATE": "${workspaceFolder}/modules/ExampleModule1",
+                "CLIENT_ID": "EXAMPLE_MODULE1",
+                "ROOT_TOPIC": "root",
+                "MODULE_NAME": "EXAMPLE_MODULE1",
+                "SERVER_ADDRESS": "0.0.0.0:1883",
+                "SERVER_USER": "guest",
+                "SERVER_PASS": "guest",
+                "MAX_BUFFER_SIZE": "0",
+                "POOL_ID": "P1",
+                "PYTHONTHREADDEBUG": "1",
+                "PYTHONASYNCIODEBUG": "1"
+            }
+        },
+        {
+            "name": "ExampleModule2",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/modules/ExampleModule2/main.py",
+            "console": "integratedTerminal",
+            "consoleName": "ExampleModule2",
+            "consoleTitle": "ExampleModule2",
+            "justMyCode": false,
+            "stopOnEntry": false,
+            "subProcess": true,
+            "env": {
+                "BASE_PATH_STATE": "${workspaceFolder}/modules/ExampleModule2",
+                "CLIENT_ID": "EXAMPLE_MODULE2",
+                "ROOT_TOPIC": "root",
+                "MODULE_NAME": "EXAMPLE_MODULE2",
+                "SERVER_ADDRESS": "0.0.0.0:1883",
+                "SERVER_USER": "guest",
+                "SERVER_PASS": "guest",
+                "MAX_BUFFER_SIZE": "0",
+                "POOL_ID": "P1",
+                "PYTHONTHREADDEBUG": "1",
+                "PYTHONASYNCIODEBUG": "1"
+            }
+        },
+    ],
+    "compounds": [
+        {
+            "name": "All",
+            "stopAll": true,
+            "configurations": [
+                "ExampleModule1",
+                "ExampleModule2"
+            ],
+            "presentation": {
+                "group": "sxs",
+                "order": 1,
+            },
+        },
+    ]
+}
