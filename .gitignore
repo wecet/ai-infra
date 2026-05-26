@@ -29,6 +29,7 @@ __pycache__/
 # Python environment
 **/venv/
 **/.venv/
+.env
 
 # So files (Will be generated upon package generation)
 *.so
