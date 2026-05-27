@@ -104,6 +104,8 @@ Once the stack is running, the services are available at:
 
 > The hostnames must resolve to your server's IP — see [Hosts Setup](#hosts-setup).
 
+When using <b>lakeFS</b> for the first time; you will be promted to create an account. Upon successful account creation, you will be met by a dashboard showing your 'Access Key' under `LAKEFS_ACCESS_KEY_ID` and 'Secret Key' under `LAKEFS_SECRET_ACCESS_KEY`. These credentials are required to use the `lakectl` CLI tool, so make sure to save them in your `.env` file. Following this, you can create a repository and branch to start versioning your data. For more details on using lakeFS, see the [Commands for lakeFS](#commands-for-lakefs) section below.
+
 ## Hosts Setup
 
 On every machine that needs to access the platform, add the following entries to `/etc/hosts`:
