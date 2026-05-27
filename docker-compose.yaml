@@ -16,13 +16,11 @@ services:
     image: chrislusf/seaweedfs:latest
     container_name: mlops-seaweedfs
     restart: unless-stopped
-    command: "server -s3 -dir=/data"
-    expose:
-      - "8333"
-      - "9333"
-      - "8888"
+    command: "server -s3 -filer -dir=/data"
     ports:
-      - "${SEAWEED_S3_PORT}:8333"
+      - "${SEAWEED_S3_PORT:-8333}:8333"
+      - "8888:8888"
+      - "9333:9333"
     volumes:
       - seaweedfs_data:/data
 
@@ -33,10 +31,10 @@ services:
     depends_on:
       - postgres
       - seaweedfs
-    expose:
-      - "5000"
+    ports:
+      - "5000:5000"
     environment:
-      - MLFLOW_SERVER_ALLOWED_HOSTS=mlflow.openiiot.mlops,192.168.0.19,localhost,127.0.0.1
+      MLFLOW_SERVER_ALLOWED_HOSTS: "mlflow.openiiot.mlops,localhost,127.0.0.1"
     command:
       - mlflow
       - server
@@ -52,8 +50,8 @@ services:
     depends_on:
       - postgres
       - seaweedfs
-    expose:
-      - "8000"
+    ports:
+      - "8000:8000"
     environment:
       LAKEFS_DATABASE_TYPE: local
       LAKEFS_AUTH_ENCRYPT_SECRET_KEY: ${LAKEFS_AUTH_ENCRYPT_SECRET_KEY}
