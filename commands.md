@@ -25,7 +25,7 @@ Example: ` lakectl fs download lakefs://quickstart/main/ ./images --recursive `
 
 Creating the request
 
-` lakectl fs upload ./{FOLDER} lakefs:{REPOSITORY}/{BRANCH}/ --recursive `
+` lakectl fs upload lakefs:{REPOSITORY}/{BRANCH}/{FOLDER} --source {FOLDER} --recursive `
 
 Example: `lakectl fs upload   lakefs://quickstart/main/samples   --source samples   --recursive`
 

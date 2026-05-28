@@ -34,7 +34,8 @@ services:
     ports:
       - "5000:5000"
     environment:
-      MLFLOW_SERVER_ALLOWED_HOSTS: "mlflow.openiiot.mlops,localhost,127.0.0.1"
+      MLFLOW_SERVER_ALLOWED_HOSTS: ""
+      MLFLOW_SERVER_CORS_ALLOWED_ORIGINS: ""
     command:
       - mlflow
       - server
@@ -42,6 +43,7 @@ services:
       - 0.0.0.0
       - --port
       - "5000"
+      - --disable-security-middleware
 
   lakefs:
     image: treeverse/lakefs:latest
