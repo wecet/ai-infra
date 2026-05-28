@@ -62,6 +62,18 @@ services:
     volumes:
       - lakefs_data:/data
 
+  portainer:
+    image: portainer/portainer-ee:latest
+    container_name: mlops-portainer
+    restart: unless-stopped
+    environment:
+      PORTAINER_LICENSE_KEY: ${PORTAINER_KEY}
+    expose:
+      - "9443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+
   nginx:
     image: nginx:alpine
     container_name: mlops-nginx
@@ -79,3 +91,4 @@ volumes:
   postgres_data:
   seaweedfs_data:
   lakefs_data:
+  portainer_data:
