@@ -91,6 +91,7 @@ Nginx is configured in [nginx/conf.d/mlops.conf](nginx/conf.d/mlops.conf) and ro
 | `mlflow.openiiot.mlops`     | `mlops-mlflow:5000` |
 | `lakefs.openiiot.mlops`     | `mlops-lakefs:8000` |
 | `seaweed.openiiot.mlops`    | `mlops-seaweedfs:8888` |
+| `portainer.openiiot.mlops` | `mlops-portainer:9000` |
 
 ## Usage
 
@@ -101,6 +102,7 @@ Once the stack is running, the services are available at:
 | MLflow    | http://mlflow.openiiot.mlops:8088      |
 | lakeFS    | http://lakefs.openiiot.mlops:8088      |
 | SeaweedFS | http://seaweed.openiiot.mlops:8088     |
+| Portainer | http://portainer.openiiot.mlops:8088  |
 
 > The hostnames must resolve to your server's IP — see [Hosts Setup](#hosts-setup).
 
@@ -118,6 +120,7 @@ sudo nano /etc/hosts
 {YOUR_SERVER_IP}  mlflow.openiiot.mlops
 {YOUR_SERVER_IP}  lakefs.openiiot.mlops
 {YOUR_SERVER_IP}  seaweed.openiiot.mlops
+{YOUR_SERVER_IP}  portainer.openiiot.mlops
 ```
 
 Replace `{YOUR_SERVER_IP}` with the actual IP address of your server.
