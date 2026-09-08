@@ -41,3 +41,8 @@ build/
 *.egg-info/
 *.egg
 *.pem
+
+# Labelling service
+node_modules/
+.pytest_cache/
+labelling/data/

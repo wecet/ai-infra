@@ -12,25 +12,12 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  seaweedfs:
-    image: chrislusf/seaweedfs:latest
-    container_name: mlops-seaweedfs
-    restart: unless-stopped
-    command: "server -s3 -filer -dir=/data"
-    ports:
-      - "${SEAWEED_S3_PORT:-8333}:8333"
-      - "8888:8888"
-      - "9333:9333"
-    volumes:
-      - seaweedfs_data:/data
-
   mlflow:
     image: ghcr.io/mlflow/mlflow:latest
     container_name: mlops-mlflow
     restart: unless-stopped
     depends_on:
       - postgres
-      - seaweedfs
     ports:
       - "5000:5000"
     environment:
@@ -51,9 +38,8 @@ services:
     restart: unless-stopped
     depends_on:
       - postgres
-      - seaweedfs
     ports:
-      - "8000:8000"
+      - "${LAKEFS_PORT:-8001}:8000"
     environment:
       LAKEFS_DATABASE_TYPE: local
       LAKEFS_AUTH_ENCRYPT_SECRET_KEY: ${LAKEFS_AUTH_ENCRYPT_SECRET_KEY}
@@ -62,19 +48,16 @@ services:
     volumes:
       - lakefs_data:/data
 
-  portainer:
-    image: portainer/portainer-ee:latest
-    container_name: mlops-portainer
+  labelling:
+    build: ./labelling
+    container_name: mlops-labelling
     restart: unless-stopped
     environment:
-      PORTAINER_LICENSE_KEY: ${PORTAINER_KEY}
-      TRUSTED_ORIGINS: portainer.openiiot.mlops
+      LABELLING_DATA_DIR: /data
     expose:
-      - "9000"
-    command: -H unix:///var/run/docker.sock
+      - "8080"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - portainer_data:/data
+      - labelling_data:/data
 
   nginx:
     image: nginx:alpine
@@ -83,7 +66,7 @@ services:
     depends_on:
       - mlflow
       - lakefs
-      - seaweedfs
+      - labelling
     ports:
       - "8088:80"
     volumes:
@@ -91,6 +74,5 @@ services:
 
 volumes:
   postgres_data:
-  seaweedfs_data:
   lakefs_data:
-  portainer_data:
+  labelling_data:
