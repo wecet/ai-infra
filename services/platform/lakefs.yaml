@@ -3,6 +3,7 @@ kind: service
 service:
   host: ~~ENV:HOST_APP~~
   id: lakefs
+  project_name: ai-infra
   name: Lakefs
   type: container
   image: ~~ENV:LAKEFS_IMAGE~~

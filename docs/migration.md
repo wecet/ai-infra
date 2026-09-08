@@ -1,6 +1,6 @@
 # Migration and persistence
 
-The labeller source moved from `labelling/` to `src/labelling/`. Its API, UI, container paths, and database format are unchanged. Nginx and custom hostnames have been removed. Applications publish direct ports configured by `LABELLING_PORT` (8080), `MLFLOW_PORT` (5000), and `LAKEFS_PORT` (8001). Remove obsolete hosts-file entries if no longer needed.
+The labeller source moved from `labelling/` to `src/labelling/`. Its API, UI, container paths, and database format are unchanged. Nginx and custom hostnames have been removed. Applications publish direct ports configured by `LABELLING_PORT` (8080), `MLFLOW_PORT` (5001), and `LAKEFS_PORT` (8002). The MLflow and lakeFS defaults avoid ports held by the legacy Compose stack during migration. Remove obsolete hosts-file entries if no longer needed.
 
 ## Existing installations
 

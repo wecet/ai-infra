@@ -29,8 +29,8 @@ Access the services directly:
 | Service | Default URL | Profile variable |
 | --- | --- | --- |
 | Labelling | http://localhost:8080 | `LABELLING_PORT` |
-| MLflow | http://localhost:5000 | `MLFLOW_PORT` |
-| lakeFS | http://localhost:8001 | `LAKEFS_PORT` |
+| MLflow | http://localhost:5001 | `MLFLOW_PORT` |
+| lakeFS | http://localhost:8002 | `LAKEFS_PORT` |
 
 Change the ports in the selected profile and restart the stack. For a remote Docker host, replace `localhost` with the server IP. No custom domains or hosts-file entries are required.
 

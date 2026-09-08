@@ -3,6 +3,7 @@ kind: service
 service:
   host: ~~ENV:HOST_APP~~
   id: labelling
+  project_name: ai-infra
   name: Labelling Studio
   type: container
   image: ~~ENV:LABELLING_IMAGE~~

@@ -3,6 +3,7 @@ kind: service
 service:
   host: ~~ENV:HOST_APP~~
   id: mlflow
+  project_name: ai-infra
   name: Mlflow
   type: container
   image: ~~ENV:MLFLOW_IMAGE~~

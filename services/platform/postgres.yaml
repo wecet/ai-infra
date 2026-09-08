@@ -3,6 +3,7 @@ kind: service
 service:
   host: ~~ENV:HOST_APP~~
   id: postgres
+  project_name: ai-infra
   name: Postgres
   type: container
   image: ~~ENV:POSTGRES_IMAGE~~

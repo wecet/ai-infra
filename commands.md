@@ -1,6 +1,6 @@
 # Commands for lakeFS
 
-Default endpoint: `http://localhost:8001`. Use your profile’s `LAKEFS_PORT` and the server IP for remote deployments.
+Default endpoint: `http://localhost:8002`. Use your profile’s `LAKEFS_PORT` and the server IP for remote deployments.
 
 ## Setting up the environment variables
 

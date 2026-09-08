@@ -17,8 +17,8 @@ Every active profile must supply the variables referenced by `services/`. Deploy
 | `POSTGRES_DB` | Initial database name, `mlops` |
 | `LAKEFS_AUTH_ENCRYPT_SECRET_KEY` | lakeFS encryption secret; replace development value and preserve for existing installations |
 | `LABELLING_PORT` | Published labeller port, `8080` (container port stays 8080) |
-| `MLFLOW_PORT` | Published tracking port, `5000` |
-| `LAKEFS_PORT` | Published lakeFS port, `8001` (container port stays 8000) |
+| `MLFLOW_PORT` | Published tracking port, `5001` (container port stays 5000) |
+| `LAKEFS_PORT` | Published lakeFS port, `8002` (container port stays 8000) |
 | `POSTGRES_VOLUME` | Physical Docker volume name, `ai-infra_postgres_data` |
 | `LAKEFS_VOLUME` | Physical Docker volume name, `ai-infra_lakefs_data` |
 | `LABELLING_VOLUME` | Physical Docker volume name, `ai-infra_labelling_data` |
