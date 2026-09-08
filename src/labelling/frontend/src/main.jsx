@@ -968,6 +968,7 @@ function Stats({ project }) {
   const [exporting, setExporting] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [filename, setFilename] = useState("annotations");
+  const [description, setDescription] = useState("");
   const [train, setTrain] = useState(80);
   async function load() {
     try {
@@ -988,7 +989,7 @@ function Stats({ project }) {
       const response = await fetch(`/api/projects/${project.id}/export`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename, train_percent: train }),
+        body: JSON.stringify({ filename, description, train_percent: train }),
       });
       if (!response.ok) {
         const body = await response.json();
@@ -1135,6 +1136,16 @@ function Stats({ project }) {
                     pattern="[A-Za-z0-9][A-Za-z0-9._\-]*"
                     value={filename}
                     onChange={(e) => setFilename(e.target.value)}
+                  />
+                </label>
+                <label>
+                  Description <span className="muted">(optional)</span>
+                  <textarea
+                    maxLength={1000}
+                    rows={4}
+                    placeholder="Describe the dataset, source, purpose, or labelling criteria."
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
                   />
                 </label>
                 <div className="split-heading">

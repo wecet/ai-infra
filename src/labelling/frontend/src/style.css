@@ -18,7 +18,8 @@ body {
 }
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 button,
@@ -48,7 +49,8 @@ button:disabled,
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,
-select:focus-visible {
+select:focus-visible,
+textarea:focus-visible {
   outline: 2px solid #2c7530;
   outline-offset: 3px;
 }
@@ -323,13 +325,20 @@ p {
   margin: 14px 0 8px;
 }
 input:not([type="range"]),
-select {
+select,
+textarea {
   background: #fff;
   border: 1px solid var(--line);
   border-radius: 5px;
   padding: 8px;
   color: #142337;
   min-width: 0;
+}
+textarea {
+  display: block;
+  width: 100%;
+  margin-top: 7px;
+  resize: vertical;
 }
 label > input:not([type="file"]) {
   display: block;

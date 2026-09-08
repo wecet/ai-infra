@@ -13,6 +13,7 @@ import uuid
 import warnings
 import zipfile
 from contextlib import asynccontextmanager, contextmanager
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
@@ -83,6 +84,7 @@ class AnnotationSave(BaseModel):
 class ExportRequest(BaseModel):
     filename: str = Field(min_length=1, max_length=100)
     train_percent: int = Field(ge=0, le=100)
+    description: str = Field(default='', max_length=1000)
 
 
 def get_project(db, project_id):
@@ -274,12 +276,32 @@ def export_project(project_id: str, payload: ExportRequest):
         raise HTTPException(422, 'Mark at least one image complete before exporting')
     random.Random(42).shuffle(rows)
     cut = math.floor(len(rows) * payload.train_percent / 100 + 0.5)
+    exported_at = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
     fd, temp_path = tempfile.mkstemp(suffix='.zip')
     os.close(fd)
     try:
         with zipfile.ZipFile(temp_path, 'w', zipfile.ZIP_DEFLATED) as archive:
             for split, subset in [('train', rows[:cut]), ('test', rows[cut:])]:
-                coco = {'info': {'description': project['name']}, 'licenses': [], 'images': [],
+                distribution = {category['id']: {
+                    'category_id': category['id'], 'name': category['name'],
+                    'annotations': 0, 'annotated_images': 0,
+                } for category in project['classes']}
+                for row in subset:
+                    represented = set()
+                    for box in json.loads(row['boxes']):
+                        distribution[box['category_id']]['annotations'] += 1
+                        represented.add(box['category_id'])
+                    for category_id in represented:
+                        distribution[category_id]['annotated_images'] += 1
+                coco = {'info': {
+                            'description': payload.description.strip(),
+                            'project_name': project['name'],
+                            'date_created': exported_at,
+                            'split': split,
+                            'images_annotated': len(subset),
+                            'total_images_annotated': len(rows),
+                            'class_distribution': list(distribution.values()),
+                        }, 'licenses': [], 'images': [],
                         'annotations': [], 'categories': [c | {'supercategory': ''} for c in project['classes']]}
                 for row in subset:
                     # Sequential IDs avoid precision loss and collisions in COCO consumers.

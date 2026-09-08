@@ -2,6 +2,7 @@ import io
 import json
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 
 import pytest
 from fastapi.testclient import TestClient
@@ -118,12 +119,28 @@ def test_kpis_and_coco_split(client):
     assert (stats['total'], stats['completed'], stats['remaining'], stats['boxes']) == (6, 5, 1, 4)
     assert stats['classes'][0] == {'id': 1, 'name': 'Bolt', 'boxes': 4, 'images': 4}
     assert stats['classes'][1]['boxes'] == 0
-    response = client.post(f'/api/projects/{pid}/export', json={'filename': 'my-dataset', 'train_percent': 80})
+    response = client.post(f'/api/projects/{pid}/export', json={
+        'filename': 'my-dataset', 'train_percent': 80, 'description': 'Fastener inspection dataset'})
     assert response.status_code == 200
     assert 'my-dataset.zip' in response.headers['content-disposition']
     with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
         train = json.loads(archive.read('train/my-dataset.json'))
         test = json.loads(archive.read('test/my-dataset.json'))
+        for split, coco, expected_images in [('train', train, 4), ('test', test, 1)]:
+            assert coco['info']['description'] == 'Fastener inspection dataset'
+            assert coco['info']['project_name'] == 'Inspection'
+            assert coco['info']['split'] == split
+            assert coco['info']['images_annotated'] == expected_images
+            assert coco['info']['total_images_annotated'] == 5
+            assert datetime.fromisoformat(coco['info']['date_created'].replace('Z', '+00:00')).tzinfo
+            assert [item['name'] for item in coco['info']['class_distribution']] == ['Bolt', 'Panel']
+        assert train['info']['date_created'] == test['info']['date_created']
+        combined = {
+            name: sum(next(item['annotations'] for item in coco['info']['class_distribution'] if item['name'] == name)
+                      for coco in (train, test))
+            for name in ('Bolt', 'Panel')
+        }
+        assert combined == {'Bolt': 4, 'Panel': 0}
         assert (len(train['images']), len(test['images'])) == (4, 1)
         train_names = {i['file_name'] for i in train['images']}
         test_names = {i['file_name'] for i in test['images']}
@@ -138,9 +155,11 @@ def test_kpis_and_coco_split(client):
                 assert annotation['image_id'] in image_ids
                 assert annotation['bbox'] == [10, 5, 30, 20]
                 assert annotation['area'] == 600
-    repeat = client.post(f'/api/projects/{pid}/export', json={'filename': 'my-dataset', 'train_percent': 80})
+    repeat = client.post(f'/api/projects/{pid}/export', json={
+        'filename': 'my-dataset', 'train_percent': 80, 'description': 'Fastener inspection dataset'})
     with zipfile.ZipFile(io.BytesIO(repeat.content)) as archive:
-        assert json.loads(archive.read('train/my-dataset.json')) == train
+        repeated = json.loads(archive.read('train/my-dataset.json'))
+        assert repeated | {'info': repeated['info'] | {'date_created': train['info']['date_created']}} == train
     for percentage, expected in [(0, 0), (100, 5)]:
         response = client.post(f'/api/projects/{pid}/export', json={'filename': 'edge', 'train_percent': percentage})
         with zipfile.ZipFile(io.BytesIO(response.content)) as archive:

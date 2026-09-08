@@ -17,7 +17,7 @@ Open http://localhost:8080 (or the port configured by `LABELLING_PORT` in your p
 3. Select a class and drag on the image to draw a box. Drag a box to move it, or select it and drag its bottom-right handle to resize. Use the box list to change its class or delete it. Zoom controls provide finer detail.
 4. Each box change saves automatically. Click **Complete & next** when finished. **No objects · complete** records an intentionally empty image; navigation alone leaves an image incomplete. Reopening a project resumes at its first incomplete image. Completed images can also be revisited and edited.
 5. Open **KPIs & export** to see total, labelled and remaining images, plus class box counts and distinct image counts. Class representation counts completed images only.
-6. Click **Export dataset**, enter a filename, and adjust either of the linked Train/Test sliders. They always total 100%. Download contains:
+6. Click **Export dataset**, enter a filename, optionally describe the dataset, and adjust either of the linked Train/Test sliders. They always total 100%. Download contains:
 
    ```text
    chosen-name.zip
@@ -31,7 +31,7 @@ Open http://localhost:8080 (or the port configured by `LABELLING_PORT` in your p
 
 7. Use **Delete project** in the project header to permanently remove the project, its annotations, and its uploaded image copies. The browser asks for confirmation first. This action cannot be undone.
 
-Each JSON file is a COCO object-detection dataset with `images`, `annotations` and `categories`. Boxes use original normalized image pixels as `[x, y, width, height]`, with `area` and `iscrowd: 0`. Image paths are relative to the JSON file. Export includes completed images only, including completed images without objects. The train count rounds to the nearest whole image; a small dataset or a 0/100 split can leave one split empty. A fixed random seed makes exports repeatable for an unchanged set of completed images. Splits are by image, without class stratification or grouping of related images.
+Each JSON file is a COCO object-detection dataset with `images`, `annotations` and `categories`. Its `info` object records the optional description, project name, UTC export timestamp, split name, annotated image counts, and per-class annotation/image distribution for that split. Boxes use original normalized image pixels as `[x, y, width, height]`, with `area` and `iscrowd: 0`. Image paths are relative to the JSON file. Export includes completed images only, including completed images without objects. The train count rounds to the nearest whole image; a small dataset or a 0/100 split can leave one split empty. A fixed random seed makes the image allocation repeatable for an unchanged set of completed images. Splits are by image, without class stratification or grouping of related images.
 
 Images are converted to RGB PNG and EXIF orientation is applied during import, so annotation coordinates match both displayed and exported images. Export uses unique filenames and records the original relative path in each image's `source_path`. Original files on your machine are untouched. Reimporting the same relative path with identical contents preserves its annotations; different contents at the same path produce an error. Successfully imported files remain available if other uploads fail, and the folder can be selected again to retry.
 
