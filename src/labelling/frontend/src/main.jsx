@@ -114,6 +114,11 @@ function App() {
             project={project}
             onLock={setLocked}
             onRefresh={refresh}
+            onDeleted={() => {
+              setProject(null);
+              setLocked(false);
+              refresh();
+            }}
           />
         ) : (
           <div className="page">
@@ -289,7 +294,7 @@ function CreateProject({ onCancel, onCreated }) {
   );
 }
 
-function Project({ project, onLock, onRefresh }) {
+function Project({ project, onLock, onRefresh, onDeleted }) {
   const [tab, setTab] = useState("annotate");
   const [images, setImages] = useState([]);
   const [index, setIndex] = useState(0);
@@ -360,6 +365,23 @@ function Project({ project, onLock, onRefresh }) {
     setUploading(false);
     lock(false);
   }
+  async function deleteProject() {
+    if (
+      !window.confirm(
+        `Delete “${project.name}” and all of its images and annotations? This cannot be undone.`,
+      )
+    )
+      return;
+    lock(true);
+    setError("");
+    try {
+      await api(`/projects/${project.id}`, { method: "DELETE" });
+      onDeleted();
+    } catch (e) {
+      setError(e.message);
+      lock(false);
+    }
+  }
   const current = images[index];
   return (
     <div className="page project-page">
@@ -372,6 +394,13 @@ function Project({ project, onLock, onRefresh }) {
           </p>
         </div>
         <div className="import-actions">
+          <button
+            className="danger"
+            disabled={locked}
+            onClick={deleteProject}
+          >
+            Delete project
+          </button>
           <label className={`button ${locked ? "disabled" : ""}`}>
             ＋ Import folder
             <input

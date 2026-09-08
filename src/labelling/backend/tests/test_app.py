@@ -75,6 +75,26 @@ def test_validation_and_conflicting_edits(client):
     assert client.post(f'/api/projects/{pid}/images', files={'file': ('../bad.png', b'no')}).status_code == 422
 
 
+def test_delete_project_removes_database_records_and_images(client):
+    pid = project(client)
+    other = project(client, 'Keep this project')
+    image = upload(client, pid)
+    upload(client, other, 'other.png')
+    stored = service.DATA / 'images' / pid / f"{image['id']}.png"
+    assert stored.is_file()
+
+    response = client.delete(f'/api/projects/{pid}')
+
+    assert response.status_code == 200
+    assert response.json() == {'deleted': pid}
+    assert client.get(f'/api/projects/{pid}').status_code == 404
+    assert client.get(f'/api/projects/{pid}/images').status_code == 404
+    assert not (service.DATA / 'images' / pid).exists()
+    assert client.get(f'/api/projects/{other}').status_code == 200
+    assert len(client.get(f'/api/projects/{other}/images').json()) == 1
+    assert client.delete(f'/api/projects/{pid}').status_code == 404
+
+
 def test_exif_orientation_is_normalized(client):
     pid = project(client)
     image = Image.new('RGB', (30, 50))

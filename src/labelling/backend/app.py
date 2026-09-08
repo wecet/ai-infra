@@ -6,6 +6,7 @@ import os
 from pathlib import Path, PurePosixPath
 import random
 import re
+import shutil
 import sqlite3
 import tempfile
 import uuid
@@ -137,6 +138,16 @@ def create_project(payload: ProjectCreate):
 def project(project_id: str):
     with database() as db:
         return get_project(db, project_id)
+
+
+@app.delete('/api/projects/{project_id}')
+def delete_project(project_id: str):
+    with database() as db:
+        get_project(db, project_id)
+        db.execute('DELETE FROM images WHERE project_id=?', (project_id,))
+        db.execute('DELETE FROM projects WHERE id=?', (project_id,))
+    shutil.rmtree(DATA / 'images' / project_id, ignore_errors=True)
+    return {'deleted': project_id}
 
 
 @app.get('/api/projects/{project_id}/images')

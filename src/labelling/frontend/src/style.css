@@ -60,6 +60,15 @@ select:focus-visible {
 .primary:hover {
   background: #225c25;
 }
+.danger {
+  color: #a1281b;
+  border-color: #d9a49d;
+}
+.danger:hover {
+  color: #fff;
+  background: #a1281b;
+  border-color: #a1281b;
+}
 .text-button {
   background: none;
   border: 0;

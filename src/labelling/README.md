@@ -29,6 +29,8 @@ Open http://localhost:8080 (or the port configured by `LABELLING_PORT` in your p
        └── images/*.png
    ```
 
+7. Use **Delete project** in the project header to permanently remove the project, its annotations, and its uploaded image copies. The browser asks for confirmation first. This action cannot be undone.
+
 Each JSON file is a COCO object-detection dataset with `images`, `annotations` and `categories`. Boxes use original normalized image pixels as `[x, y, width, height]`, with `area` and `iscrowd: 0`. Image paths are relative to the JSON file. Export includes completed images only, including completed images without objects. The train count rounds to the nearest whole image; a small dataset or a 0/100 split can leave one split empty. A fixed random seed makes exports repeatable for an unchanged set of completed images. Splits are by image, without class stratification or grouping of related images.
 
 Images are converted to RGB PNG and EXIF orientation is applied during import, so annotation coordinates match both displayed and exported images. Export uses unique filenames and records the original relative path in each image's `source_path`. Original files on your machine are untouched. Reimporting the same relative path with identical contents preserves its annotations; different contents at the same path produce an error. Successfully imported files remain available if other uploads fail, and the folder can be selected again to retry.
@@ -69,4 +71,4 @@ npm ci
 npm run build
 ```
 
-API tests cover persisted progress, reimports, project isolation, concurrent-edit conflicts, invalid coordinates, image orientation, KPI counts, and complete/disjoint COCO exports, including empty splits and negative examples.
+API tests cover persisted progress, reimports, project deletion and isolation, concurrent-edit conflicts, invalid coordinates, image orientation, KPI counts, and complete/disjoint COCO exports, including empty splits and negative examples.
