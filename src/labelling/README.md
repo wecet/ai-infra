@@ -5,10 +5,10 @@ A React frontend and Python/FastAPI backend for persistent bounding-box annotati
 ## Run with the stack
 
 ```bash
-docker compose up -d --build
+./start.sh dev
 ```
 
-Add `{YOUR_SERVER_IP} labelling.openiiot.mlops` to your computer's hosts file and open http://labelling.openiiot.mlops:8088. The service is also built and started by `./start.sh`.
+Open http://localhost:8080 (or the port configured by `LABELLING_PORT` in your profile). For a remote Docker host, replace `localhost` with its IP address. The service is also built and started by `./start.sh`.
 
 ## Workflow
 
@@ -35,7 +35,7 @@ Images are converted to RGB PNG and EXIF orientation is applied during import, s
 
 ## Persistence and deployment
 
-Data lives under `/data` in the container. Restarting or rebuilding preserves the named volume. Back up the entire volume with the service stopped to keep the database and image files consistent. `docker compose down -v` deletes this data.
+Data lives under `/data` in the container. Restarting or rebuilding preserves the named volume. Back up the entire volume with the service stopped to keep the database and image files consistent. `./scripts/compose.sh dev down -v` deletes this data.
 
 This service has no login or per-user permissions: deploy it on your trusted internal network. Conflicting edits to the same image from different tabs are rejected instead of overwriting newer annotations. A failed save is shown in the UI and blocks navigation until retried or explicitly discarded by reloading the image.
 
@@ -44,15 +44,15 @@ This service has no login or per-user permissions: deploy it on your trusted int
 Use Python 3.12 and Node.js 24. From the repository root:
 
 ```bash
-python3 -m venv labelling/backend/.venv
-labelling/backend/.venv/bin/pip install -r labelling/backend/requirements.txt
-LABELLING_DATA_DIR="$PWD/labelling/data" labelling/backend/.venv/bin/uvicorn app:app --app-dir labelling/backend --host 127.0.0.1 --port 8080
+python3 -m venv src/labelling/backend/.venv
+src/labelling/backend/.venv/bin/pip install -r src/labelling/backend/requirements.txt
+LABELLING_DATA_DIR="$PWD/src/labelling/data" src/labelling/backend/.venv/bin/uvicorn app:app --app-dir src/labelling/backend --host 127.0.0.1 --port 8080
 ```
 
 In a second terminal:
 
 ```bash
-cd labelling/frontend
+cd src/labelling/frontend
 npm ci
 npm run dev
 ```
@@ -62,9 +62,9 @@ Vite proxies `/api` to the Python service on port 8080. Open the local URL print
 ## Verification
 
 ```bash
-labelling/backend/.venv/bin/pip install -r labelling/backend/requirements-dev.txt
-PYTHONPATH=labelling/backend labelling/backend/.venv/bin/pytest labelling/backend/tests -q
-cd labelling/frontend
+src/labelling/backend/.venv/bin/pip install -r src/labelling/backend/requirements-dev.txt
+PYTHONPATH=src/labelling/backend src/labelling/backend/.venv/bin/pytest src/labelling/backend/tests -q
+cd src/labelling/frontend
 npm ci
 npm run build
 ```

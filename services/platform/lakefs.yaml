@@ -1,0 +1,34 @@
+spec_version: '1'
+kind: service
+service:
+  host: ~~ENV:HOST_APP~~
+  id: lakefs
+  name: Lakefs
+  type: container
+  image: ~~ENV:LAKEFS_IMAGE~~
+  restart: unless-stopped
+  aliases:
+  - mlops-lakefs
+  networks:
+  - id: ~~ENV:NETWORK_NAME~~
+    internal: false
+  depends_on:
+  - postgres
+  environment:
+    LAKEFS_DATABASE_TYPE: local
+    LAKEFS_AUTH_ENCRYPT_SECRET_KEY: ~~ENV:LAKEFS_AUTH_ENCRYPT_SECRET_KEY~~
+    LAKEFS_BLOCKSTORE_TYPE: local
+    LAKEFS_LOCAL_PATH: /data
+  ports:
+  - host: ~~ENV:LAKEFS_PORT~~
+    container: 8000
+  volumes:
+  - type: volume
+    source: lakefs_data
+    name: ~~ENV:LAKEFS_VOLUME~~
+    target: /data
+  logging:
+    driver: json-file
+    options:
+      max-size: ~~ENV:LOG_MAX_SIZE~~
+      max-file: ~~ENV:LOG_MAX_FILE~~

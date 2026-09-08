@@ -1,0 +1,29 @@
+spec_version: '1'
+kind: service
+service:
+  host: ~~ENV:HOST_APP~~
+  id: labelling
+  name: Labelling Studio
+  type: container
+  image: ~~ENV:LABELLING_IMAGE~~
+  restart: unless-stopped
+  aliases:
+  - mlops-labelling
+  networks:
+  - id: ~~ENV:NETWORK_NAME~~
+    internal: false
+  environment:
+    LABELLING_DATA_DIR: /data
+  volumes:
+  - type: volume
+    source: labelling_data
+    name: ~~ENV:LABELLING_VOLUME~~
+    target: /data
+  logging:
+    driver: json-file
+    options:
+      max-size: ~~ENV:LOG_MAX_SIZE~~
+      max-file: ~~ENV:LOG_MAX_FILE~~
+  ports:
+  - host: ~~ENV:LABELLING_PORT~~
+    container: 8080

@@ -1,0 +1,13 @@
+spec_version: '1'
+kind: deployment
+metadata:
+  name: ai-infra
+  client: OpenIIoT
+  environment: development
+  site: local
+sources:
+  project_dir: src
+  test_dir: src/labelling/backend/tests
+  services_dir: services
+  profiles_dir: profiles
+  design_dir: design

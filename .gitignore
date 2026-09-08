@@ -45,4 +45,8 @@ build/
 # Labelling service
 node_modules/
 .pytest_cache/
-labelling/data/
+src/labelling/data/
+
+# Private plaintext profiles
+profiles/*.local.env
+profiles/prod.nolock.env

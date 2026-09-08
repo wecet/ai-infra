@@ -1,0 +1,35 @@
+spec_version: '1'
+kind: service
+service:
+  host: ~~ENV:HOST_APP~~
+  id: mlflow
+  name: Mlflow
+  type: container
+  image: ~~ENV:MLFLOW_IMAGE~~
+  restart: unless-stopped
+  aliases:
+  - mlops-mlflow
+  networks:
+  - id: ~~ENV:NETWORK_NAME~~
+    internal: false
+  depends_on:
+  - postgres
+  command:
+  - mlflow
+  - server
+  - --host
+  - 0.0.0.0
+  - --port
+  - '5000'
+  - --disable-security-middleware
+  environment:
+    MLFLOW_SERVER_ALLOWED_HOSTS: ''
+    MLFLOW_SERVER_CORS_ALLOWED_ORIGINS: ''
+  ports:
+  - host: ~~ENV:MLFLOW_PORT~~
+    container: 5000
+  logging:
+    driver: json-file
+    options:
+      max-size: ~~ENV:LOG_MAX_SIZE~~
+      max-file: ~~ENV:LOG_MAX_FILE~~
