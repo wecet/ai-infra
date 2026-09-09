@@ -1,13 +1,13 @@
 # Configurable variables
 
-Every active profile must supply the variables referenced by `services/`. Deployment Manager uses `~~ENV:NAME~~`; Compose uses `${NAME}`. Do not put Deployment Manager markers in `deployment.yaml`.
+Every active profile must supply the variables referenced by `services/`. Deployment Manager resolves `~~ENV:NAME~~` markers in service definitions. Do not put these markers in `deployment.yaml`.
 
 | Variable | Purpose / default |
 | --- | --- |
 | `HOST_APP` | Deployment Manager Docker host key; `<default>` locally, SSH URL remotely |
 | `DEPLOYED_CONFIG_PATH` | Absolute manager-managed configuration directory; required for non-dev profiles |
-| `DISABLED_SERVICES` | Manager service filtering; empty enables all services; does not affect Compose |
-| `NETWORK_NAME` | Manager bridge network name; default `ai-infra-network`; Compose uses its own default network |
+| `DISABLED_SERVICES` | Manager service filtering; empty enables all services |
+| `NETWORK_NAME` | Manager bridge network name; default `ai-infra-network` |
 | `POSTGRES_IMAGE` | PostgreSQL image, initially `postgres:16` |
 | `MLFLOW_IMAGE` | Tracking image, initially `ghcr.io/mlflow/mlflow:latest` |
 | `LAKEFS_IMAGE` | Versioning image, initially `treeverse/lakefs:latest` |
@@ -29,4 +29,4 @@ Access each application at `http://localhost:PORT`, or use the Docker server IP 
 
 The labeller's `LABELLING_DATA_DIR=/data`, lakeFS local storage settings, and MLflow command are defined in service YAML. For native labeller development, override `LABELLING_DATA_DIR` with a writable local path. See [the labeller guide](../src/labelling/README.md).
 
-When adding a setting, update every profile/template, service definition, Compose configuration where applicable, and this table together. Keep private plaintext credentials out of Git; production profiles should be encrypted with your own SOPS policy.
+When adding a setting, update every profile/template, the relevant service definition, and this table together. Keep private plaintext credentials out of Git; production profiles should be encrypted with your own SOPS policy.

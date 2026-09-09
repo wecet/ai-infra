@@ -4,11 +4,7 @@ A React frontend and Python/FastAPI backend for persistent bounding-box annotati
 
 ## Run with the stack
 
-```bash
-./start.sh dev
-```
-
-Open http://localhost:8080 (or the port configured by `LABELLING_PORT` in your profile). For a remote Docker host, replace `localhost` with its IP address. The service is also built and started by `./start.sh`.
+Open the repository in Deployment Manager, select a profile, review the deployment plan, and deploy it. Then open http://localhost:8080 (or the port configured by `LABELLING_PORT` in your profile). For a remote Docker host, replace `localhost` with its IP address.
 
 ## Workflow
 
@@ -37,7 +33,7 @@ Images are converted to RGB PNG and EXIF orientation is applied during import, s
 
 ## Persistence and deployment
 
-Data lives under `/data` in the container. Restarting or rebuilding preserves the named volume. Back up the entire volume with the service stopped to keep the database and image files consistent. `./scripts/compose.sh dev down -v` deletes this data.
+Data lives under `/data` in the container. Restarting or rebuilding preserves the named volume. Back up the entire volume with the service stopped to keep the database and image files consistent. Deleting the named volume deletes this data.
 
 This service has no login or per-user permissions: deploy it on your trusted internal network. Conflicting edits to the same image from different tabs are rejected instead of overwriting newer annotations. A failed save is shown in the UI and blocks navigation until retried or explicitly discarded by reloading the image.
 

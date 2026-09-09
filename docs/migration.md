@@ -5,11 +5,11 @@ The labeller source moved from `labelling/` to `src/labelling/`. Its API, UI, co
 ## Existing installations
 
 1. Record the running containers' volume mounts with `docker inspect mlops-postgres mlops-lakefs mlops-labelling`. Back up data before handing the deployment to a new manager.
-2. Copy your existing root `.env` settings into the chosen profile, especially PostgreSQL credentials and `LAKEFS_AUTH_ENCRYPT_SECRET_KEY`. Keep lakeFS CLI access keys in your CLI configuration. The old `.env` is left on disk but is no longer used by the scripts.
+2. Copy settings from an older installation's root `.env` into the chosen profile, especially PostgreSQL credentials and `LAKEFS_AUTH_ENCRYPT_SECRET_KEY`. Keep lakeFS CLI access keys in your CLI configuration. This repository no longer uses a root `.env`.
 3. Set `POSTGRES_VOLUME`, `LAKEFS_VOLUME`, and `LABELLING_VOLUME` to the actual existing Docker volume names. Defaults match the original `ai-infra` Compose project. A different checkout/project name may have created different names. Missing names create empty volumes; they do not migrate data.
 4. Preserve any MLflow tracking data from the existing container before removing it. The previous Compose configuration had no MLflow volume or explicit backend/artifact store; this restructuring preserves that behavior. PostgreSQL credentials alone do not configure MLflow to use PostgreSQL.
-5. Stop the old stack without deleting volumes, using `docker compose down` before switching configuration, or `./scripts/compose.sh dev down` after updating profiles. Deploy with the chosen runner.
-6. Remove the obsolete Nginx container: for Compose use `./scripts/compose.sh dev up -d --build --remove-orphans`; for Deployment Manager review and apply its removal in the reconciliation plan.
+5. Stop the old stack from its original checkout without deleting volumes, using `docker compose down`, before switching control to Deployment Manager.
+6. Review the Deployment Manager reconciliation plan and apply removal of the obsolete Nginx container.
 7. Verify existing lakeFS repositories and labelling projects, images, annotations, and exports.
 
 ## Storage

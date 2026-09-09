@@ -1,6 +1,6 @@
 # AI Infrastructure
 
-A self-hosted MLflow, lakeFS, and image labelling stack, with PostgreSQL. Deploy through Deployment Manager or run locally with Docker Compose.
+A self-hosted MLflow, lakeFS, and image labelling stack, with PostgreSQL, deployed through Deployment Manager.
 
 ## Repository layout
 
@@ -11,20 +11,13 @@ services/platform/          One Deployment Manager definition per service
 src/labelling/              Labeller Dockerfile, React UI, FastAPI API, tests
 docs/                       Deployment, configuration, and migration guides
 design/                     Architecture
-scripts/compose.sh          Compose wrapper with explicit profile selection
 ```
 
-## Local start
+## Deployment
 
-Install Docker Engine and Compose. The optional Ubuntu `./bootstrap.sh` also installs the MLflow and lakeFS CLI tools.
+Open this repository in Deployment Manager and select the appropriate profile. Use `dev` for the manager's default local Docker host, or `local_server.nolock` for the configured remote host. Review the rendered desired state and reconciliation plan, then deploy.
 
-Review `profiles/dev.env`, then run:
-
-```bash
-./start.sh dev
-```
-
-Access the services directly:
+Access the deployed services directly:
 
 | Service | Default URL | Profile variable |
 | --- | --- | --- |
@@ -32,19 +25,7 @@ Access the services directly:
 | MLflow | http://localhost:5001 | `MLFLOW_PORT` |
 | lakeFS | http://localhost:8002 | `LAKEFS_PORT` |
 
-Change the ports in the selected profile and restart the stack. For a remote Docker host, replace `localhost` with the server IP. No custom domains or hosts-file entries are required.
-
-```bash
-./scripts/compose.sh dev ps
-./scripts/compose.sh dev logs -f labelling
-./scripts/compose.sh dev down
-```
-
-Configuration lives in `profiles/`. The scripts explicitly select a profile; the old root `.env` is no longer loaded. Shell environment overrides still follow Compose precedence.
-
-## Deployment Manager
-
-Open this repository as a deployment project and select `dev` or `local_server.nolock`. Configure the target host and image references before deploying. The manager reads `deployment.yaml` and `services/`; application images must already be available to the target Docker host.
+Change the ports in the selected profile and redeploy. For a remote Docker host, replace `localhost` with the server IP. The manager reads `deployment.yaml`, `profiles/`, and `services/`; application images must already be available to the target Docker host.
 
 - [Deployment and image publishing](docs/deployment.md)
 - [Profile variables](docs/configurable-variables.md)
