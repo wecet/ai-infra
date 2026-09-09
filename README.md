@@ -7,10 +7,9 @@ A self-hosted MLflow, lakeFS, and image labelling stack, with PostgreSQL, deploy
 ```text
 deployment.yaml             Deployment Manager V1 manifest
 profiles/                   Deployment environment settings
-services/platform/          One Deployment Manager definition per service
+services/ai-infra/          One Deployment Manager definition per service
 src/labelling/              Labeller Dockerfile, React UI, FastAPI API, tests
 docs/                       Deployment, configuration, and migration guides
-design/                     Architecture
 ```
 
 ## Deployment
