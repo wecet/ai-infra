@@ -83,6 +83,12 @@ npm run dev
 
 Vite proxies `/api` to the Python service on port 8080. Open the local URL printed by Vite. Production builds serve the compiled React app directly from FastAPI.
 
+### Source layout
+
+The backend composition root is `backend/app.py`. Shared database setup, validation models, storage helpers, and image utilities live in `backend/common.py`; API endpoints are grouped under `backend/routes/` as `projects.py`, `images.py`, `versions.py`, and `datasets.py`.
+
+The frontend entry point is `frontend/src/main.jsx`, with the application shell in `App.jsx`. Feature components live under `frontend/src/components/`, including dedicated modules for Dashboard, Editor, History, Review, Settings, and Versions. `style.css` only composes the focused files under `frontend/src/styles/`: base, homepage, workspace, dashboard, and responsive rules.
+
 ## Verification
 
 ```bash

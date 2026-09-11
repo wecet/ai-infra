@@ -53,6 +53,7 @@ def test_classification_persistence_stats_and_export(client):
 def test_old_database_migration(tmp_path, monkeypatch):
     import sqlite3
     monkeypatch.setattr(service, 'DATA', tmp_path)
+    monkeypatch.setattr(service.common, 'DATA', tmp_path)
     with sqlite3.connect(tmp_path / 'labelling.sqlite3') as db:
         db.executescript('''CREATE TABLE projects(id TEXT PRIMARY KEY, name TEXT, classes TEXT, created_at TEXT);
             CREATE TABLE images(id TEXT PRIMARY KEY, project_id TEXT, source_path TEXT, stored_name TEXT,
@@ -419,6 +420,7 @@ def test_upload_size_and_same_name_conflict(client, monkeypatch):
     Image.new('RGB', (10, 10)).save(raw, 'PNG')
     assert client.post(f'/api/projects/{pid}/images', files={'file': ('folder/a.png', raw.getvalue())}).status_code == 409
     monkeypatch.setattr(service, 'MAX_UPLOAD', 4)
+    monkeypatch.setattr(service.images, 'MAX_UPLOAD', 4)
     assert client.post(f'/api/projects/{pid}/images', files={'file': ('big.png', b'12345')}).status_code == 413
 
 

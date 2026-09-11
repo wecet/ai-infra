@@ -11,6 +11,8 @@ COPY backend/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/app.py ./
 COPY backend/ai_labelling.py ./
+COPY backend/common.py ./
+COPY backend/routes ./routes
 COPY --from=frontend /build/dist /app/static
 RUN mkdir /data
 ENV LABELLING_DATA_DIR=/data
