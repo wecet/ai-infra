@@ -204,6 +204,7 @@ function App() {
 
 function CreateProject({ onCancel, onCreated }) {
   const [name, setName] = useState("");
+  const [annotationType, setAnnotationType] = useState("object_detection");
   const [classes, setClasses] = useState([""]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -215,7 +216,7 @@ function CreateProject({ onCancel, onCreated }) {
       onCreated(
         await api("/projects", {
           method: "POST",
-          body: JSON.stringify({ name, classes }),
+          body: JSON.stringify({ name, classes, annotation_type: annotationType }),
         }),
       );
     } catch (e) {
@@ -225,9 +226,20 @@ function CreateProject({ onCancel, onCreated }) {
     }
   }
   return (
-    <form className="panel create-form" onSubmit={submit}>
+    <div className="modal-backdrop">
+    <form className="panel create-form" role="dialog" aria-modal="true" aria-labelledby="create-title" onSubmit={submit}>
       <div className="eyebrow">NEW PROJECT</div>
-      <h2>Set up your dataset</h2>
+      <h2 id="create-title">Set up your dataset</h2>
+      <fieldset className="task-selection">
+        <legend>Annotation type — choose one</legend>
+        {[["object_detection", "Object detection"], ["image_classification", "Image classification"]].map(([value, label]) => (
+          <label className="checkbox-label" key={value}>
+            <input type="checkbox" checked={annotationType === value} disabled={busy}
+              onChange={() => setAnnotationType(value)} />
+            {label}
+          </label>
+        ))}
+      </fieldset>
       <label>
         Project name
         <input
@@ -291,6 +303,7 @@ function CreateProject({ onCancel, onCreated }) {
         </button>
       </div>
     </form>
+    </div>
   );
 }
 
@@ -303,6 +316,27 @@ function Project({ project, onLock, onRefresh, onDeleted }) {
   const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
   const [loaded, setLoaded] = useState(false);
+  const [aiEnabled, setAiEnabled] = useState(false);
+  const [aiValidating, setAiValidating] = useState(false);
+  const [aiError, setAiError] = useState("");
+  const classification = project.annotation_type === "image_classification";
+  const aiAttempts = useRef(new Set());
+  async function toggleAI(e) {
+    if (!e.target.checked) { setAiEnabled(false); return; }
+    setAiValidating(true);
+    lock(true);
+    try {
+      await api("/ai/validate", { method: "POST" });
+      aiAttempts.current.clear();
+      setAiEnabled(true);
+    } catch (e) {
+      setAiEnabled(false);
+      setAiError(e.message);
+    } finally {
+      setAiValidating(false);
+      lock(false);
+    }
+  }
   function lock(value) {
     setLocked(value);
     onLock(value);
@@ -389,6 +423,7 @@ function Project({ project, onLock, onRefresh, onDeleted }) {
         <div>
           <h1>{project.name}</h1>
           <p className="muted">
+            {classification ? "Image classification" : "Object detection"} ·{" "}
             {images.length} images <span className="separator">/</span>{" "}
             {project.classes.length} classes
           </p>
@@ -445,6 +480,24 @@ function Project({ project, onLock, onRefresh, onDeleted }) {
           {images.filter((i) => i.completed).length} / {images.length} complete
         </span>
       </div>
+      {!classification && (
+        <div className="notice ai-controls">
+          <label className="checkbox-label">
+            <input type="checkbox" checked={aiEnabled} disabled={locked || aiValidating}
+              onChange={toggleAI} />
+            {aiValidating ? "Validating AI credentials…" : "AI-Assisted Labelling"}
+          </label>
+          <span className="muted small">Sends unannotated images to OpenAI as you open them. Review suggested boxes before completing.</span>
+        </div>
+      )}
+      {aiError && (
+        <div className="modal-backdrop">
+          <div className="panel ai-dialog" role="alertdialog" aria-modal="true" aria-labelledby="ai-error-title">
+            <h2 id="ai-error-title">{aiError}</h2>
+            <button className="primary" autoFocus onClick={() => setAiError("")}>OK</button>
+          </div>
+        </div>
+      )}
       {progress && (
         <div className="notice" role="status">
           {uploading && <span className="status-dot" />}
@@ -480,7 +533,10 @@ function Project({ project, onLock, onRefresh, onDeleted }) {
           index={index}
           total={images.length}
           images={images}
-          uploading={uploading}
+          uploading={uploading || aiValidating}
+          aiEnabled={aiEnabled}
+          aiAttempts={aiAttempts}
+          onAIError={(message) => { setAiEnabled(false); setAiError(message); }}
           onLock={lock}
           onNavigate={setIndex}
           onSaved={(saved) => {
@@ -504,6 +560,9 @@ function Editor({
   total,
   images,
   uploading,
+  aiEnabled,
+  aiAttempts,
+  onAIError,
   onLock,
   onNavigate,
   onSaved,
@@ -516,11 +575,13 @@ function Editor({
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState("");
   const [ready, setReady] = useState(false);
+  const [aiWorking, setAiWorking] = useState(false);
   const [zoom, setZoom] = useState(1);
   const svg = useRef(null);
   const gesture = useRef(null);
   const inFlight = useRef(false);
   const path = `/projects/${project.id}/images/${image.id}`;
+  const classification = project.annotation_type === "image_classification";
   useEffect(() => {
     const controller = new AbortController();
     api(path, { signal: controller.signal })
@@ -530,6 +591,18 @@ function Editor({
       });
     return () => controller.abort();
   }, [path]);
+  useEffect(() => {
+    if (!aiEnabled || classification || !data || data.revision !== 0 || data.completed || data.boxes.length ||
+        dirty || uploading || inFlight.current || aiAttempts.current.has(image.id)) return;
+    aiAttempts.current.add(image.id);
+    inFlight.current = true;
+    setAiWorking(true);
+    setSaving(true);
+    api(`${path}/ai`, { method: "POST", body: JSON.stringify({ revision: data.revision }) })
+      .then((saved) => { setData(saved); onSaved(saved); })
+      .catch((e) => { onAIError(e.message); })
+      .finally(() => { inFlight.current = false; setSaving(false); setAiWorking(false); });
+  }, [aiEnabled, data, path, dirty, uploading, classification]);
   useEffect(() => {
     onLock(saving || dirty || uploading || !!draft);
   }, [saving, dirty, uploading, !!draft]);
@@ -588,7 +661,7 @@ function Editor({
     };
   }
   function start(e, boxIndex = null, resize = false) {
-    if (disabled || dirty || e.button !== 0) return;
+    if (classification || disabled || dirty || inFlight.current || e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
     const p = point(e);
@@ -745,7 +818,7 @@ function Editor({
                   setDraft(null);
                 }}
                 aria-label="Image annotation canvas"
-                style={{ cursor: disabled || dirty ? "wait" : "crosshair" }}
+                style={{ cursor: disabled || dirty ? "wait" : classification ? "default" : "crosshair" }}
               >
                 {displayBoxes.map((b, i) => (
                   <g key={i}>
@@ -798,7 +871,7 @@ function Editor({
               className={dirty && !saving ? "warning-text" : "muted"}
               role="status"
             >
-              {saving
+              {aiWorking ? "AI is suggesting boxes…" : saving
                 ? "Saving…"
                 : dirty
                   ? "Unsaved changes"
@@ -849,26 +922,30 @@ function Editor({
             <div className="section-title">
               CLASSES <span>{project.classes.length}</span>
             </div>
-            <p className="muted small">Select a class, then drag to draw.</p>
+            <p className="muted small">{classification ? "Select all classes present in this image." : "Select a class, then drag to draw."}</p>
             <div className="class-list">
               {project.classes.map((c) => (
                 <button
                   key={c.id}
-                  className={`class-choice ${category === c.id ? "chosen" : ""}`}
+                  className={`class-choice ${(classification ? data?.labels?.includes(c.id) : category === c.id) ? "chosen" : ""}`}
+                  aria-pressed={classification ? !!data?.labels?.includes(c.id) : category === c.id}
                   disabled={disabled || dirty || !!draft}
-                  onClick={() => setCategory(c.id)}
+                  onClick={() => classification ? persist({ ...data,
+                    labels: data.labels.includes(c.id) ? data.labels.filter((id) => id !== c.id) : [...data.labels, c.id],
+                    completed: false,
+                  }) : setCategory(c.id)}
                 >
                   <span
                     className="small-dot"
                     style={{ background: color(c.id) }}
                   />
                   {c.name}
-                  <span>{category === c.id ? "●" : ""}</span>
+                  <span>{(classification ? data?.labels?.includes(c.id) : category === c.id) ? "●" : ""}</span>
                 </button>
               ))}
             </div>
           </div>
-          <div className="panel-section objects">
+          {!classification && <div className="panel-section objects">
             <div className="section-title">
               BOUNDING BOXES <span>{boxes.length}</span>
             </div>
@@ -925,6 +1002,7 @@ function Editor({
               </div>
             ))}
           </div>
+          }
           <div className="panel-section complete-section">
             <span
               className={`completion-label ${data?.completed ? "accent" : ""}`}
@@ -936,7 +1014,8 @@ function Editor({
               disabled={disabled || dirty || !!draft}
               onClick={complete}
             >
-              {boxes.length ? "Complete & next →" : "No objects · complete →"}
+              {classification ? (data?.labels?.length ? "Complete & next →" : "No classes · complete →") :
+                boxes.length ? "Complete & next →" : "No objects · complete →"}
             </button>
             {data?.completed && (
               <button
@@ -948,21 +1027,22 @@ function Editor({
               </button>
             )}
             <p className="muted small">
-              Boxes save automatically. Mark an image complete to include it in
+              {classification ? "Classes" : "Boxes"} save automatically. Mark an image complete to include it in
               KPIs and export.
             </p>
           </div>
         </aside>
       </div>
       <p className="editor-hint">
-        Drag a box to move it. Select a box and drag its bottom-right handle to
-        resize. Zoom in for finer detail.
+        {classification ? "Choose image classes in the sidebar, then complete and move to the next image." :
+          "Drag a box to move it. Select a box and drag its bottom-right handle to resize. Zoom in for finer detail."}
       </p>
     </>
   );
 }
 
 function Stats({ project }) {
+  const classification = project.annotation_type === "image_classification";
   const [stats, setStats] = useState(null);
   const [error, setError] = useState("");
   const [exporting, setExporting] = useState(false);
@@ -1051,7 +1131,7 @@ function Stats({ project }) {
                 `${stats.total ? Math.round((stats.completed / stats.total) * 100) : 0}% complete`,
               ],
               ["REMAINING", stats.remaining, "Ready for your attention"],
-              ["BOUNDING BOXES", stats.boxes, "On completed images"],
+              [classification ? "IMAGE LABELS" : "BOUNDING BOXES", classification ? stats.labels : stats.boxes, "On completed images"],
             ].map(([label, value, note]) => (
               <div className="panel kpi" key={label}>
                 <div className="eyebrow">{label}</div>
@@ -1063,7 +1143,7 @@ function Stats({ project }) {
           <div className="panel representation">
             <h2>Class representation</h2>
             <p className="muted">
-              Bounding boxes and distinct images for each class, on completed
+              {classification ? "Image labels" : "Bounding boxes"} and distinct images for each class, on completed
               images only.
             </p>
             <div className="table-wrap">
@@ -1071,8 +1151,8 @@ function Stats({ project }) {
                 <thead>
                   <tr>
                     <th>CLASS</th>
-                    <th>DISTRIBUTION OF BOXES</th>
-                    <th>BOXES</th>
+                    <th>{classification ? "DISTRIBUTION OF LABELS" : "DISTRIBUTION OF BOXES"}</th>
+                    <th>{classification ? "LABELS" : "BOXES"}</th>
                     <th>IMAGES</th>
                   </tr>
                 </thead>
@@ -1091,20 +1171,20 @@ function Stats({ project }) {
                           <div className="progress-track">
                             <span
                               style={{
-                                width: `${stats.boxes ? (c.boxes / stats.boxes) * 100 : 0}%`,
+                                width: `${(classification ? stats.labels : stats.boxes) ? ((classification ? c.labels : c.boxes) / (classification ? stats.labels : stats.boxes)) * 100 : 0}%`,
                                 background: color(c.id),
                               }}
                             />
                           </div>
                           <span>
-                            {stats.boxes
-                              ? Math.round((c.boxes / stats.boxes) * 100)
+                            {(classification ? stats.labels : stats.boxes)
+                              ? Math.round(((classification ? c.labels : c.boxes) / (classification ? stats.labels : stats.boxes)) * 100)
                               : 0}
                             %
                           </span>
                         </div>
                       </td>
-                      <td>{c.boxes}</td>
+                      <td>{classification ? c.labels : c.boxes}</td>
                       <td>{c.images}</td>
                     </tr>
                   ))}
@@ -1121,11 +1201,11 @@ function Stats({ project }) {
                 aria-labelledby="export-title"
                 onSubmit={download}
               >
-                <div className="eyebrow">COCO DATASET</div>
+                <div className="eyebrow">{classification ? "CLASSIFICATION DATASET" : "COCO DATASET"}</div>
                 <h2 id="export-title">Export your annotations</h2>
                 <p className="muted">
-                  Download a ZIP with train/test images and a COCO JSON file for
-                  each split. Only completed images are included.
+                  {classification ? "Download a ZIP with train/test images and JSON image-class assignments for each split." :
+                    "Download a ZIP with train/test images and a COCO JSON file for each split."} Only completed images are included.
                 </p>
                 <label>
                   File name

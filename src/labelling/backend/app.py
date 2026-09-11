@@ -14,6 +14,10 @@ import warnings
 import zipfile
 from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timezone
+from typing import Literal
+from threading import Lock
+
+import ai_labelling
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
@@ -60,11 +64,17 @@ def init_db():
             completed INTEGER NOT NULL DEFAULT 0, revision INTEGER NOT NULL DEFAULT 0,
             boxes TEXT NOT NULL DEFAULT '[]', UNIQUE(project_id, source_path));
         ''')
+        # Additive migrations preserve annotations from existing deployments.
+        if 'annotation_type' not in {r['name'] for r in db.execute('PRAGMA table_info(projects)')}:
+            db.execute("ALTER TABLE projects ADD COLUMN annotation_type TEXT NOT NULL DEFAULT 'object_detection'")
+        if 'labels' not in {r['name'] for r in db.execute('PRAGMA table_info(images)')}:
+            db.execute("ALTER TABLE images ADD COLUMN labels TEXT NOT NULL DEFAULT '[]'")
 
 
 class ProjectCreate(BaseModel):
     name: str = Field(min_length=1, max_length=150)
     classes: list[str] = Field(min_length=1)
+    annotation_type: Literal['object_detection', 'image_classification'] = 'object_detection'
 
 
 class Box(BaseModel):
@@ -77,6 +87,7 @@ class Box(BaseModel):
 
 class AnnotationSave(BaseModel):
     boxes: list[Box]
+    labels: list[int] = Field(default_factory=list)
     completed: bool
     revision: int = Field(ge=0)
 
@@ -103,7 +114,8 @@ def get_image(db, project_id, image_id):
 
 def image_json(row):
     return {key: row[key] for key in ('id', 'source_path', 'width', 'height', 'revision')} | {
-        'completed': bool(row['completed']), 'boxes': json.loads(row['boxes'])}
+        'completed': bool(row['completed']), 'boxes': json.loads(row['boxes']),
+        'labels': json.loads(row['labels'])}
 
 
 @app.get('/api/health')
@@ -114,7 +126,7 @@ def health():
 @app.get('/api/projects')
 def projects():
     with database() as db:
-        rows = db.execute('''SELECT p.id, p.name, p.created_at, COUNT(i.id) AS total,
+        rows = db.execute('''SELECT p.id, p.name, p.annotation_type, p.created_at, COUNT(i.id) AS total,
             COALESCE(SUM(i.completed), 0) AS completed FROM projects p
             LEFT JOIN images i ON i.project_id=p.id GROUP BY p.id ORDER BY p.created_at DESC, p.id''')
         return [dict(row) for row in rows]
@@ -131,8 +143,8 @@ def create_project(payload: ProjectCreate):
     categories = [{'id': i + 1, 'name': name} for i, name in enumerate(classes)]
     project_id = uuid.uuid4().hex
     with database() as db:
-        db.execute('INSERT INTO projects (id,name,classes) VALUES (?,?,?)',
-                   (project_id, name, json.dumps(categories)))
+        db.execute('INSERT INTO projects (id,name,classes,annotation_type) VALUES (?,?,?,?)',
+                   (project_id, name, json.dumps(categories), payload.annotation_type))
         return get_project(db, project_id)
 
 
@@ -229,14 +241,21 @@ def save_annotations(project_id: str, image_id: str, payload: AnnotationSave):
         project = get_project(db, project_id)
         row = get_image(db, project_id, image_id)
         categories = {c['id'] for c in project['classes']}
+        classification = project['annotation_type'] == 'image_classification'
+        if classification and payload.boxes:
+            raise HTTPException(422, 'Classification projects use image classes, not bounding boxes')
+        if not classification and payload.labels:
+            raise HTTPException(422, 'Detection projects use bounding boxes')
+        if len(set(payload.labels)) != len(payload.labels) or not set(payload.labels) <= categories:
+            raise HTTPException(422, 'Unknown or duplicate image class')
         for box in payload.boxes:
             if box.category_id not in categories:
                 raise HTTPException(422, 'Unknown class')
             if box.x + box.width > row['width'] + 0.001 or box.y + box.height > row['height'] + 0.001:
                 raise HTTPException(422, 'Bounding box is outside the image')
-        result = db.execute('''UPDATE images SET boxes=?,completed=?,revision=revision+1
+        result = db.execute('''UPDATE images SET boxes=?,labels=?,completed=?,revision=revision+1
             WHERE id=? AND project_id=? AND revision=?''',
-            (json.dumps([b.model_dump() for b in payload.boxes]), payload.completed,
+            (json.dumps([b.model_dump() for b in payload.boxes]), json.dumps(payload.labels), payload.completed,
              image_id, project_id, payload.revision))
         if result.rowcount != 1:
             raise HTTPException(409, 'This image changed in another tab. Reload before editing again.')
@@ -247,13 +266,16 @@ def save_annotations(project_id: str, image_id: str, payload: AnnotationSave):
 def stats(project_id: str):
     with database() as db:
         project = get_project(db, project_id)
-        rows = db.execute('SELECT completed,boxes FROM images WHERE project_id=?', (project_id,)).fetchall()
-    classes = [c | {'boxes': 0, 'images': 0} for c in project['classes']]
+        rows = db.execute('SELECT completed,boxes,labels FROM images WHERE project_id=?', (project_id,)).fetchall()
+    extra = {'labels': 0} if project['annotation_type'] == 'image_classification' else {}
+    classes = [c | {'boxes': 0, 'images': 0} | extra for c in project['classes']]
     by_id = {c['id']: c for c in classes}
     for row in rows:
         if not row['completed']:
             continue
-        represented = set()
+        represented = set(json.loads(row['labels']))
+        for category_id in represented:
+            by_id[category_id]['labels'] += 1
         for box in json.loads(row['boxes']):
             by_id[box['category_id']]['boxes'] += 1
             represented.add(box['category_id'])
@@ -261,7 +283,8 @@ def stats(project_id: str):
             by_id[category_id]['images'] += 1
     completed = sum(row['completed'] for row in rows)
     return {'total': len(rows), 'completed': completed, 'remaining': len(rows) - completed,
-            'boxes': sum(c['boxes'] for c in classes), 'classes': classes}
+            'boxes': sum(c['boxes'] for c in classes),
+            'labels': sum(c.get('labels', 0) for c in classes), 'classes': classes}
 
 
 @app.post('/api/projects/{project_id}/export')
@@ -287,7 +310,9 @@ def export_project(project_id: str, payload: ExportRequest):
                     'annotations': 0, 'annotated_images': 0,
                 } for category in project['classes']}
                 for row in subset:
-                    represented = set()
+                    represented = set(json.loads(row['labels']))
+                    for category_id in represented:
+                        distribution[category_id]['annotations'] += 1
                     for box in json.loads(row['boxes']):
                         distribution[box['category_id']]['annotations'] += 1
                         represented.add(box['category_id'])
@@ -296,6 +321,7 @@ def export_project(project_id: str, payload: ExportRequest):
                 coco = {'info': {
                             'description': payload.description.strip(),
                             'project_name': project['name'],
+                            'annotation_type': project['annotation_type'],
                             'date_created': exported_at,
                             'split': split,
                             'images_annotated': len(subset),
@@ -309,6 +335,8 @@ def export_project(project_id: str, payload: ExportRequest):
                     coco['images'].append({'id': image_id, 'file_name': f"images/{row['stored_name']}",
                         'width': row['width'], 'height': row['height'], 'source_path': row['source_path']})
                     archive.write(DATA / 'images' / project_id / row['stored_name'], f"{split}/images/{row['stored_name']}")
+                    if project['annotation_type'] == 'image_classification':
+                        coco['images'][-1]['category_ids'] = json.loads(row['labels'])
                     for box in json.loads(row['boxes']):
                         coco['annotations'].append({'id': len(coco['annotations']) + 1, 'image_id': image_id,
                             'category_id': box['category_id'], 'bbox': [box['x'], box['y'], box['width'], box['height']],
@@ -319,6 +347,42 @@ def export_project(project_id: str, payload: ExportRequest):
         raise
     return FileResponse(temp_path, media_type='application/zip', filename=f'{filename}.zip',
                         background=BackgroundTask(lambda: Path(temp_path).unlink(missing_ok=True)))
+
+
+ai_lock = Lock()
+
+
+@app.post('/api/ai/validate')
+def validate_ai():
+    ai_labelling.validate_credentials()
+    return {'valid': True}
+
+
+class AISuggestRequest(BaseModel):
+    revision: int = Field(ge=0)
+
+
+@app.post('/api/projects/{project_id}/images/{image_id}/ai')
+def suggest_annotations(project_id: str, image_id: str, payload: AISuggestRequest):
+    if not ai_lock.acquire(blocking=False):
+        raise HTTPException(409, 'AI assistance is busy. Try again shortly.')
+    try:
+        with database() as db:
+            project = get_project(db, project_id)
+            row = get_image(db, project_id, image_id)
+            if project['annotation_type'] != 'object_detection':
+                raise HTTPException(422, 'AI assistance is available for object detection projects only')
+            if row['revision'] != payload.revision:
+                raise HTTPException(409, 'This image changed. Reload before requesting AI assistance.')
+            if row['revision'] or row['completed'] or json.loads(row['boxes']):
+                raise HTTPException(409, 'AI assistance only runs on unannotated images')
+            image_path = DATA / 'images' / project_id / row['stored_name']
+        boxes = ai_labelling.detect(image_path, project['classes'], row['width'], row['height'])
+        # The ordinary save path validates classes, bounds, and the revision again.
+        return save_annotations(project_id, image_id, AnnotationSave(
+            boxes=boxes, completed=False, revision=payload.revision))
+    finally:
+        ai_lock.release()
 
 
 static_dir = Path(os.environ.get('LABELLING_STATIC_DIR', '/app/static'))

@@ -2,6 +2,8 @@
 
 A self-hosted MLflow, lakeFS, and image labelling stack, with PostgreSQL, deployed through Deployment Manager.
 
+The labeller supports object detection, multi-label image classification, and optional AI-generated box suggestions. Configure the ignored `gpt.env` for AI assistance; a blank API key keeps manual labelling available. See the [labelling guide](src/labelling/README.md).
+
 ## Repository layout
 
 ```text

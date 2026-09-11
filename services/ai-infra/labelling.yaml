@@ -15,7 +15,13 @@ service:
     internal: false
   environment:
     LABELLING_DATA_DIR: /data
+    GPT_ENV_FILE: /app/gpt.env
   volumes:
+  - type: bind
+    source: gpt.env
+    target: /app/gpt.env
+    readonly: true
+    replace: true
   - type: volume
     source: labelling_data
     name: ~~ENV:LABELLING_VOLUME~~

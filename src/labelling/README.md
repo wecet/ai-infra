@@ -1,6 +1,6 @@
 # Labelling Studio
 
-A React frontend and Python/FastAPI backend for persistent bounding-box annotation projects. SQLite stores project definitions, annotation coordinates and completion state; uploaded images are stored alongside it in the `labelling_data` Docker volume.
+A React frontend and Python/FastAPI backend for object detection and image classification. SQLite stores project types, classes, boxes, whole-image class labels and completion state; uploaded images live in the same `labelling_data` Docker volume.
 
 ## Run with the stack
 
@@ -8,11 +8,11 @@ Open the repository in Deployment Manager, select a profile, review the deployme
 
 ## Workflow
 
-1. Create a project and add as many named classes as you need. Class names must be unique within a project. Classes are fixed once the project is created.
+1. Create a project, choose **Object detection** or **Image classification**, and add your named classes. Select one project type. Class names must be unique; type and classes are fixed once created. Existing projects remain object detection projects.
 2. Use **Import folder** to choose a local directory, including subfolders, or select individual files. The browser uploads copies to the server. JPEG, PNG, WebP, BMP and TIFF are supported, up to 50 MiB and 40 megapixels per image. For multipage TIFFs, only the first frame is imported. Other files in a folder are skipped.
-3. Select a class and drag on the image to draw a box. Drag a box to move it, or select it and drag its bottom-right handle to resize. Use the box list to change its class or delete it. Zoom controls provide finer detail.
-4. Each box change saves automatically. Click **Complete & next** when finished. **No objects · complete** records an intentionally empty image; navigation alone leaves an image incomplete. Reopening a project resumes at its first incomplete image. Completed images can also be revisited and edited.
-5. Open **KPIs & export** to see total, labelled and remaining images, plus class box counts and distinct image counts. Class representation counts completed images only.
+3. For detection, select a class and drag to draw a box; move, resize, reclassify or delete boxes as needed. For classification, click the classes present in the whole image; multiple classes may be selected, and clicking again removes a class. No boxes are drawn.
+4. Box and class changes save automatically. Click **Complete & next** when finished. **No objects · complete** or **No classes · complete** records an intentionally empty image; navigation alone leaves an image incomplete. Reopening resumes at the first incomplete image. Changing a completed classification's classes marks it incomplete for review.
+5. Open **KPIs & export** to see progress, bounding-box or image-label counts, and distinct image counts for each class. Class representation counts completed images only.
 6. Click **Export dataset**, enter a filename, optionally describe the dataset, and adjust either of the linked Train/Test sliders. They always total 100%. Download contains:
 
    ```text
@@ -30,6 +30,20 @@ Open the repository in Deployment Manager, select a profile, review the deployme
 Each JSON file is a COCO object-detection dataset with `images`, `annotations` and `categories`. Its `info` object records the optional description, project name, UTC export timestamp, split name, annotated image counts, and per-class annotation/image distribution for that split. Boxes use original normalized image pixels as `[x, y, width, height]`, with `area` and `iscrowd: 0`. Image paths are relative to the JSON file. Export includes completed images only, including completed images without objects. The train count rounds to the nearest whole image; a small dataset or a 0/100 split can leave one split empty. A fixed random seed makes the image allocation repeatable for an unchanged set of completed images. Splits are by image, without class stratification or grouping of related images.
 
 Images are converted to RGB PNG and EXIF orientation is applied during import, so annotation coordinates match both displayed and exported images. Export uses unique filenames and records the original relative path in each image's `source_path`. Original files on your machine are untouched. Reimporting the same relative path with identical contents preserves its annotations; different contents at the same path produce an error. Successfully imported files remain available if other uploads fail, and the folder can be selected again to retry.
+
+Classification exports use the same ZIP layout, but each image record contains `category_ids` referencing the `categories` list. `annotations` is empty; there are no artificial full-image bounding boxes. The JSON `info.annotation_type` identifies the task. Detection exports remain COCO bounding-box datasets.
+
+## AI-Assisted Labelling
+
+Fill in the private repository-root `gpt.env` using `gpt.env.example` as a reference. `OPENAI_API_KEY` and `OPENAI_MODEL` are required. The other fields control the HTTPS API base URL, timeout, output token limit, image detail, optional project/organization headers, and reasoning effort (leave blank for models that do not support it). Use a model supporting image input and Structured Outputs.
+
+Deployment Manager mounts `gpt.env` read-only at `/app/gpt.env`; it is ignored by Git and excluded from images. For a fresh checkout, copy `gpt.env.example` to `gpt.env` before deploying, even if leaving the key blank. Native development finds the repository-root file automatically; `GPT_ENV_FILE` overrides its location. After changing credentials in the deployment checkout, redeploy the labeller to synchronize the mounted file to the target host.
+
+In a detection project, check **AI-Assisted Labelling**. A small blank-image request validates credentials and model support. Missing or rejected credentials show **Invalid Credentials Provided** and leave the checkbox unticked. Quota, network, and unsupported-model errors have separate messages. No key is sent to the browser or stored in SQLite.
+
+While enabled, each newly opened, untouched image is sent to OpenAI once for suggestions using only the project's classes. Calls use the Responses API with structured JSON and `store: false`. Enabling the checkbox and generating suggestions incur API usage. Images are scaled to at most 2048 pixels on their longest side; returned normalized coordinates are mapped back to the original image. Existing annotations, completed images, and concurrent edits are protected from replacement. Suggestions save as incomplete drafts, including empty predictions, and remain editable. Review positioning and classes before clicking **Complete & next**. Assistance is off when reopening a project; disable and re-enable to retry a failed image.
+
+Reference: [OpenAI image input](https://developers.openai.com/api/docs/guides/images-vision) and [Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs).
 
 ## Persistence and deployment
 

@@ -11,6 +11,99 @@ from PIL import Image
 import app as service
 
 
+def test_classification_persistence_stats_and_export(client):
+    created = client.post('/api/projects', json={
+        'name': 'Conditions', 'classes': ['Clean', 'Damaged'], 'annotation_type': 'image_classification'})
+    assert created.status_code == 201
+    pid = created.json()['id']
+    image = upload(client, pid)
+    path = f"/api/projects/{pid}/images/{image['id']}"
+    for labels in ([3], [1, 1]):
+        assert client.put(path, json={'revision': 0, 'completed': True, 'boxes': [], 'labels': labels}).status_code == 422
+    assert save(client, pid, image).status_code == 422  # No boxes in classification projects.
+    payload = {'revision': 0, 'completed': False, 'boxes': [], 'labels': [1, 2]}
+    result = client.put(path, json=payload)
+    assert result.status_code == 200
+    assert client.get(f'/api/projects/{pid}/stats').json()['labels'] == 0
+    payload.update(revision=1, completed=True)
+    assert client.put(path, json=payload).status_code == 200
+    assert client.put(path, json=payload).status_code == 409
+    service.init_db()
+    assert client.get(path).json()['labels'] == [1, 2]
+    assert upload(client, pid)['labels'] == [1, 2]  # Reimports retain whole-image labels.
+    stats = client.get(f'/api/projects/{pid}/stats').json()
+    assert stats['labels'] == 2 and stats['boxes'] == 0
+    assert [c['images'] for c in stats['classes']] == [1, 1]
+    negative = upload(client, pid, 'negative.png')
+    assert save(client, pid, negative, boxes=[]).status_code == 200
+    archive = client.post(f'/api/projects/{pid}/export', json={'filename': 'classes', 'train_percent': 100})
+    assert archive.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(archive.content)) as z:
+        data = json.loads(z.read('train/classes.json'))
+        assert data['info']['annotation_type'] == 'image_classification'
+        assert data['annotations'] == []
+        assert sorted(im['category_ids'] for im in data['images']) == [[], [1, 2]]
+        assert json.loads(z.read('test/classes.json'))['images'] == []
+        assert [c['annotations'] for c in data['info']['class_distribution']] == [1, 1]
+
+
+def test_old_database_migration(tmp_path, monkeypatch):
+    import sqlite3
+    monkeypatch.setattr(service, 'DATA', tmp_path)
+    with sqlite3.connect(tmp_path / 'labelling.sqlite3') as db:
+        db.executescript('''CREATE TABLE projects(id TEXT PRIMARY KEY, name TEXT, classes TEXT, created_at TEXT);
+            CREATE TABLE images(id TEXT PRIMARY KEY, project_id TEXT, source_path TEXT, stored_name TEXT,
+            digest TEXT, width INTEGER, height INTEGER, completed INTEGER, revision INTEGER, boxes TEXT);
+            INSERT INTO projects VALUES ('old', 'Original', '[{"id": 1, "name": "A"}]', '2026-01-01');
+            INSERT INTO images VALUES ('image','old','a.png','a.png','hash',100,80,1,7,
+            '[{"category_id":1,"x":1,"y":2,"width":10,"height":20}]');''')
+    service.init_db()
+    service.init_db()
+    with service.database() as db:
+        assert service.get_project(db, 'old')['annotation_type'] == 'object_detection'
+        image = service.image_json(service.get_image(db, 'old', 'image'))
+        assert image['revision'] == 7 and image['completed']
+        assert image['boxes'][0]['width'] == 10 and image['labels'] == []
+
+
+def test_ai_saves_draft_once_and_preserves_edits(client, monkeypatch):
+    calls = []
+    def detect(*args):
+        calls.append(args)
+        return [{'category_id': 1, 'x': 10, 'y': 5, 'width': 30, 'height': 20}]
+    monkeypatch.setattr(service.ai_labelling, 'detect', detect)
+    pid = project(client)
+    image = upload(client, pid)
+    path = f"/api/projects/{pid}/images/{image['id']}/ai"
+    result = client.post(path, json={'revision': 0})
+    assert result.status_code == 200 and not result.json()['completed']
+    assert result.json()['revision'] == 1 and len(result.json()['boxes']) == 1
+    assert client.post(path, json={'revision': 1}).status_code == 409
+    assert len(calls) == 1
+    assert save(client, pid, result.json(), boxes=[]).status_code == 200
+    assert client.post(path, json={'revision': 2}).status_code == 409
+    # A human edit while the model runs must win.
+    second = upload(client, pid, 'second.png')
+    def concurrent(*args):
+        assert save(client, pid, second).status_code == 200
+        return []
+    monkeypatch.setattr(service.ai_labelling, 'detect', concurrent)
+    assert client.post(f"/api/projects/{pid}/images/{second['id']}/ai", json={'revision': 0}).status_code == 409
+    current = client.get(f"/api/projects/{pid}/images/{second['id']}").json()
+    assert current['completed'] and len(current['boxes']) == 1
+
+
+def test_ai_classification_rejected_and_no_credentials(client, monkeypatch, tmp_path):
+    monkeypatch.setenv('GPT_ENV_FILE', str(tmp_path / 'missing.env'))
+    result = client.post('/api/ai/validate')
+    assert result.status_code == 401
+    assert result.json()['detail'] == 'Invalid Credentials Provided'
+    pid = client.post('/api/projects', json={'name': 'Classify', 'classes': ['A'],
+        'annotation_type': 'image_classification'}).json()['id']
+    image = upload(client, pid)
+    assert client.post(f"/api/projects/{pid}/images/{image['id']}/ai", json={'revision': 0}).status_code == 422
+
+
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setattr(service, 'DATA', tmp_path)

@@ -3,3 +3,4 @@ frontend/dist
 backend/.venv
 **/__pycache__
 **/.pytest_cache
+**/gpt.env

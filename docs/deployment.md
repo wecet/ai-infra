@@ -16,6 +16,8 @@ Set `DEPLOYED_CONFIG_PATH` to an absolute, writable path appropriate to your man
 
 ## Build and publish the labeller
 
+Create `gpt.env` at the repository root from `gpt.env.example` before deploying. Leave `OPENAI_API_KEY` empty for manual-only labelling, or fill in the key and desired image-capable model for AI assistance. Deployment Manager synchronizes this ignored file and mounts it read-only into the backend; do not include it in the Docker image. See [AI-assisted labelling](../src/labelling/README.md#ai-assisted-labelling) for all settings.
+
 Use a registry and immutable release tag available to your deployment host:
 
 ```bash
