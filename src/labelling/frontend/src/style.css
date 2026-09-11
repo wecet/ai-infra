@@ -331,9 +331,9 @@ p {
   border-color: var(--accent);
   background: #e8f3e5;
   box-shadow: 0 0 0 4px #75a96f30, 0 12px 30px #214d2833;
-  animation: absorb-project 680ms ease-in-out infinite;
+  animation: absorb-project 1200ms ease-in-out infinite;
 }
-.project-card.absorbing .project-type-icon { transform: scale(1.12); }
+.project-card.absorbing .project-type-icon { transform: scale(1.07); }
 .project-card.absorbing::after {
   content: "Release to merge";
   position: absolute;
@@ -348,12 +348,12 @@ p {
 }
 @keyframes absorb-project {
   0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.075); }
+  50% { transform: scale(1.045); }
 }
 .merge-dialog { width: min(520px, 96vw); padding: 24px; }
 @media (prefers-reduced-motion: reduce) {
   .project-card { transition: none; }
-  .project-card.absorbing { animation: none; transform: scale(1.035); }
+  .project-card.absorbing { animation: none; transform: scale(1.02); }
 }
 .card-top {
   display: flex;
