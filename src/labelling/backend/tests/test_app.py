@@ -207,6 +207,7 @@ def test_publish_is_immutable_and_bulk_review_approves_selection(client):
     pid = project(client)
     first = upload(client, pid, 'first.png')
     second = upload(client, pid, 'second.png', (90, 70))
+    upload(client, pid, 'untouched.png')
     first = save(client, pid, first).json()
     second = save(client, pid, second, boxes=[]).json()
     published = client.post(f'/api/projects/{pid}/publish', headers={'x-forwarded-user': 'publisher'})
@@ -216,6 +217,7 @@ def test_publish_is_immutable_and_bulk_review_approves_selection(client):
     assert client.get(f'/api/projects/{pid}/versions').json()[0]['author'] == 'publisher'
     before = client.get(f'/api/projects/{pid}/versions/{version_id}').json()
     assert before['sample_count'] == 2 and before['snapshot']['images'][0]['boxes']
+    assert {item['source_path'] for item in before['snapshot']['images']} == {'first.png', 'second.png'}
     assert client.get(f"/api/projects/{pid}/versions/{version_id}/images/{first['id']}/file").status_code == 200
     assert save(client, pid, first, boxes=[]).status_code == 200
     after = client.get(f'/api/projects/{pid}/versions/{version_id}').json()
@@ -224,7 +226,8 @@ def test_publish_is_immutable_and_bulk_review_approves_selection(client):
                           json={'image_ids': [first['id'], second['id']], 'status': 'approved'})
     assert approved.status_code == 200 and approved.json()['updated'] == 2
     rows = client.get(f'/api/projects/{pid}/images').json()
-    assert all(item['review_status'] == 'approved' for item in rows)
+    assert all(item['review_status'] == 'approved' for item in rows if item['id'] in {first['id'], second['id']})
+    assert next(item for item in rows if item['source_path'] == 'untouched.png')['review_status'] == 'draft'
     assert all('annotation_count' in item and 'category_ids' in item for item in rows)
     assert client.post(f'/api/projects/{pid}/publish').json()['name'].startswith('v2-')
 

@@ -250,7 +250,7 @@ function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
         <History project={project} onRestored={() => refresh()}
           onView={(list) => { setReviewImages(list); setTab("review"); }} />
       ) : tab === "review" ? (
-        <Review project={project} images={reviewImages || images}
+        <Review project={project} images={(reviewImages || images).filter((item) => item.completed)}
           filtered={!!reviewImages} onClear={() => setReviewImages(null)}
           onReviewed={(saved) => setImages((list) => list.map((item) => item.id === saved.id ? { ...item, ...saved } : item))}
           onEdit={(id) => { const next = images.findIndex((item) => item.id === id); if (next >= 0) setIndex(next); setTab("annotate"); }} />
@@ -307,4 +307,3 @@ function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
 }
 
 export default Project;
-

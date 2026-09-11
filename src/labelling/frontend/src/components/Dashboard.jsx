@@ -137,7 +137,7 @@ function Dashboard({ project, onPublished }) {
                 {project.description || "A clear picture of your labelling progress."}
               </p>
             </div>
-            <div className="actions"><button disabled={publishing} onClick={publish}>
+            <div className="actions"><button disabled={publishing || !stats.completed} onClick={publish}>
               {publishing ? "Publishing…" : "◈ Publish"}</button>
               <button className="primary" disabled={!stats.completed || exporting} onClick={() => setShowExport(true)}>
                 ↓ Export dataset</button></div>
@@ -330,4 +330,3 @@ function Dashboard({ project, onPublished }) {
 }
 
 export default Dashboard;
-

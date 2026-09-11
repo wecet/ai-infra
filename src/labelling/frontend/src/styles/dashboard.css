@@ -34,7 +34,7 @@
 .review-card { position: relative; }
 .review-select { position: absolute; z-index: 2; top: 8px; left: 8px; display: flex; gap: 5px;
   align-items: center; padding: 5px 7px; border-radius: 4px; background: #fffffff0; box-shadow: 0 2px 6px #14271820; }
-.review-filters { display: grid; grid-template-columns: 2fr repeat(3, minmax(135px, 1fr)) auto;
+.review-filters { display: grid; grid-template-columns: 2fr repeat(2, minmax(135px, 1fr)) auto;
   gap: 8px; align-items: center; margin-bottom: 12px; padding: 10px; }
 .class-management { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 16px; }
 .managed-class { display: grid; grid-template-columns: 42px minmax(140px, 1fr) auto minmax(130px, auto); gap: 8px; align-items: center; }

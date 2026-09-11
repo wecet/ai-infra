@@ -9,7 +9,10 @@ def publish_version(project_id: str, request: Request):
     directory = DATA / 'versions' / project_id / version_id
     with database() as db:
         project = get_project(db, project_id)
-        rows = db.execute('SELECT * FROM images WHERE project_id=? ORDER BY source_path,id', (project_id,)).fetchall()
+        rows = db.execute('''SELECT * FROM images WHERE project_id=? AND completed=1
+            ORDER BY source_path,id''', (project_id,)).fetchall()
+        if not rows:
+            raise HTTPException(422, 'Complete at least one annotation before publishing')
         number = db.execute('SELECT COALESCE(MAX(version_number),0)+1 FROM dataset_versions WHERE project_id=?',
                             (project_id,)).fetchone()[0]
         name = f'v{number}-{datetime.now(timezone.utc).strftime("%y%m%d")}-ready'

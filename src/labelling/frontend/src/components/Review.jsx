@@ -32,7 +32,6 @@ function Review({ project, images, filtered, onClear, onEdit, onReviewed }) {
   const [status, setStatus] = useState("all");
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
-  const [completion, setCompletion] = useState("all");
   const [count, setCount] = useState("all");
   const [selected, setSelected] = useState([]);
   const [rejecting, setRejecting] = useState(null);
@@ -41,7 +40,6 @@ function Review({ project, images, filtered, onClear, onEdit, onReviewed }) {
   const [error, setError] = useState("");
   const visible = images.filter((image) =>
     (status === "all" || image.review_status === status) &&
-    (completion === "all" || image.completed === (completion === "complete")) &&
     (category === "all" || image.category_ids?.includes(Number(category))) &&
     (count === "all" || (count === "empty" ? image.annotation_count === 0 : image.annotation_count > 0)) &&
     image.source_path.toLowerCase().includes(query.trim().toLowerCase()));
@@ -69,7 +67,7 @@ function Review({ project, images, filtered, onClear, onEdit, onReviewed }) {
     <div>
       <div className="page-heading">
         <div><h2>Review annotations</h2><p className="muted">
-          {filtered ? `${images.length} images from this history entry.` : `${images.length} project images available to search and review.`}
+          {filtered ? `${images.length} annotated images from this history entry.` : `${images.length} completed annotations available to search and review.`}
         </p></div>
         <div className="review-actions"><select aria-label="Filter review status" value={status}
           onChange={(e) => setStatus(e.target.value)}>
@@ -81,9 +79,6 @@ function Review({ project, images, filtered, onClear, onEdit, onReviewed }) {
         <input aria-label="Search images" placeholder="Search filename…" value={query} onChange={(e) => setQuery(e.target.value)} />
         <select aria-label="Filter class" value={category} onChange={(e) => setCategory(e.target.value)}>
           <option value="all">All classes</option>{project.classes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-        </select>
-        <select aria-label="Filter completion" value={completion} onChange={(e) => setCompletion(e.target.value)}>
-          <option value="all">Complete and incomplete</option><option value="complete">Complete</option><option value="incomplete">Incomplete</option>
         </select>
         <select aria-label="Filter annotation count" value={count} onChange={(e) => setCount(e.target.value)}>
           <option value="all">Any annotation count</option><option value="annotated">Has annotations</option><option value="empty">No annotations</option>
@@ -118,4 +113,3 @@ function Review({ project, images, filtered, onClear, onEdit, onReviewed }) {
 }
 
 export default Review;
-
