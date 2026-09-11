@@ -15,6 +15,7 @@ function App() {
   const [importProjectName, setImportProjectName] = useState("");
   const [draggedProject, setDraggedProject] = useState(null);
   const [mergeTarget, setMergeTarget] = useState(null);
+  const [reorderTarget, setReorderTarget] = useState(null);
   const [pendingMerge, setPendingMerge] = useState(null);
   const [mergeError, setMergeError] = useState("");
   const [merging, setMerging] = useState(false);
@@ -64,7 +65,7 @@ function App() {
     finally { setImportingProject(false); }
   }
   function finishDrag() {
-    setDraggedProject(null); setMergeTarget(null);
+    setDraggedProject(null); setMergeTarget(null); setReorderTarget(null);
     setTimeout(() => { dragged.current = false; }, 0);
   }
   function dropProject(target) {
@@ -75,6 +76,35 @@ function App() {
     } else {
       setPendingMerge({ source, target });
     }
+    finishDrag();
+  }
+  function dragIntent(e, target) {
+    if (!draggedProject || draggedProject.id === target.id) return { kind: "none" };
+    const rect = e.currentTarget.getBoundingClientRect();
+    const ratio = (e.clientX - rect.left) / rect.width;
+    if (ratio < 0.22) return { kind: "reorder", position: "before" };
+    if (ratio > 0.78) return { kind: "reorder", position: "after" };
+    return { kind: "merge" };
+  }
+  function showDragIntent(e, target) {
+    const intent = dragIntent(e, target);
+    if (intent.kind === "reorder") {
+      setReorderTarget({ id: target.id, position: intent.position }); setMergeTarget(null);
+    } else if (intent.kind === "merge" && draggedProject.annotation_type === target.annotation_type) {
+      setReorderTarget(null); setMergeTarget(target);
+    } else {
+      setReorderTarget(null); setMergeTarget(null);
+    }
+  }
+  async function reorderProject(source, target, position) {
+    const remaining = projects.filter((item) => item.id !== source.id);
+    const targetIndex = remaining.findIndex((item) => item.id === target.id);
+    remaining.splice(targetIndex + (position === "after" ? 1 : 0), 0, source);
+    setProjects(remaining);
+    try {
+      await api('/projects/order', { method: 'PUT',
+        body: JSON.stringify({ project_ids: remaining.map((item) => item.id) }) });
+    } catch (e) { setMergeError(e.message); await refresh(); }
     finishDrag();
   }
   async function confirmMerge() {
@@ -188,7 +218,7 @@ function App() {
                 <h1>Projects</h1>
                 <p className="muted">
                   Create and manage image annotation projects. Progress is saved
-                  automatically.
+                  automatically. Drag card edges to reorder, or drop onto a card centre to merge.
                 </p>
               </div>
               <div className="homepage-actions">
@@ -214,7 +244,7 @@ function App() {
             <div className="project-grid">
               {projects.map((p) => (
                 <button
-                  className={`project-card project-card-${p.annotation_type === "image_classification" ? "classification" : "detection"} ${draggedProject?.id === p.id ? "dragging" : ""} ${mergeTarget?.id === p.id ? "absorbing" : ""}`}
+                  className={`project-card project-card-${p.annotation_type === "image_classification" ? "classification" : "detection"} ${draggedProject?.id === p.id ? "dragging" : ""} ${mergeTarget?.id === p.id ? "absorbing" : ""} ${reorderTarget?.id === p.id ? `reorder-${reorderTarget.position}` : ""}`}
                   key={p.id}
                   draggable
                   onDragStart={(e) => {
@@ -222,11 +252,14 @@ function App() {
                     e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", p.id);
                   }}
                   onDragEnd={finishDrag}
-                  onDragEnter={(e) => { e.preventDefault(); if (draggedProject?.id !== p.id &&
-                    draggedProject?.annotation_type === p.annotation_type) setMergeTarget(p); else setMergeTarget(null); }}
-                  onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
-                  onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setMergeTarget(null); }}
-                  onDrop={(e) => { e.preventDefault(); dropProject(p); }}
+                  onDragEnter={(e) => { e.preventDefault(); showDragIntent(e, p); }}
+                  onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; showDragIntent(e, p); }}
+                  onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) {
+                    setMergeTarget(null); setReorderTarget(null);
+                  } }}
+                  onDrop={(e) => { e.preventDefault(); const intent = dragIntent(e, p);
+                    if (intent.kind === "reorder") reorderProject(draggedProject, p, intent.position);
+                    else dropProject(p); }}
                   onClick={() => { if (!dragged.current) open(p.id); }}
                 >
                   <div className="card-top">

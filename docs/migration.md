@@ -4,19 +4,18 @@ The labeller source moved from `labelling/` to `src/labelling/`. Its container d
 
 ## Existing installations
 
-1. Record the running containers' volume mounts with `docker inspect mlops-postgres mlops-lakefs mlops-labelling`. Back up data before handing the deployment to a new manager.
-2. Copy settings from an older installation's root `.env` into the chosen profile, especially PostgreSQL credentials and `LAKEFS_AUTH_ENCRYPT_SECRET_KEY`. Keep lakeFS CLI access keys in your CLI configuration. This repository no longer uses a root `.env`.
-3. Set `POSTGRES_VOLUME`, `LAKEFS_VOLUME`, and `LABELLING_VOLUME` to the actual existing Docker volume names. Defaults match the original `ai-infra` Compose project. A different checkout/project name may have created different names. Missing names create empty volumes; they do not migrate data.
-4. Preserve any MLflow tracking data from the existing container before removing it. The previous Compose configuration had no MLflow volume or explicit backend/artifact store; this restructuring preserves that behavior. PostgreSQL credentials alone do not configure MLflow to use PostgreSQL.
+1. Record the running containers' volume mounts with `docker inspect mlops-lakefs mlops-labelling`. Back up data before handing the deployment to a new manager.
+2. Copy settings from an older installation's root `.env` into the chosen profile, especially `LAKEFS_AUTH_ENCRYPT_SECRET_KEY`. Keep lakeFS CLI access keys in your CLI configuration. This repository no longer uses a root `.env`.
+3. Set `LAKEFS_VOLUME` and `LABELLING_VOLUME` to the actual existing Docker volume names. Defaults match the original `ai-infra` Compose project. A different checkout/project name may have created different names. Missing names create empty volumes; they do not migrate data.
+4. Preserve any MLflow tracking data from the existing container before removing it. The previous Compose configuration had no MLflow volume or explicit backend/artifact store; this restructuring preserves that behavior.
 5. Stop the old stack from its original checkout without deleting volumes, using `docker compose down`, before switching control to Deployment Manager.
-6. Review the Deployment Manager reconciliation plan and apply removal of the obsolete Nginx container.
+6. Review the Deployment Manager reconciliation plan and apply removal of obsolete containers that are no longer defined by this workspace.
 7. Verify existing lakeFS repositories and labelling projects, images, annotations, History entries, Dashboard comments, Review states, Settings, quality checks, and paired train/test exports. Existing labelling images are assigned to the migrated project's initial **Project Created** history entry. Images deleted after this upgrade are archived and can be previewed and restored from History. Historic deletion entries created before archive support retain their source paths but cannot recover files that were already removed.
 
 ## Storage
 
 | Service | Container path | Profile volume setting |
 | --- | --- | --- |
-| PostgreSQL | `/var/lib/postgresql/data` | `POSTGRES_VOLUME` |
 | lakeFS | `/data` | `LAKEFS_VOLUME` |
 | Labeller | `/data` | `LABELLING_VOLUME` |
 

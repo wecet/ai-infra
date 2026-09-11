@@ -167,6 +167,20 @@ def test_project_merge_rejects_different_annotation_types(client):
     assert client.get(f'/api/projects/{classification}').status_code == 200
 
 
+def test_project_card_order_persists_and_rejects_stale_lists(client):
+    first = project(client, 'First')
+    second = project(client, 'Second')
+    third = project(client, 'Third')
+    assert [item['id'] for item in client.get('/api/projects').json()] == [first, second, third]
+    reordered = client.put('/api/projects/order', json={'project_ids': [third, first, second]})
+    assert reordered.status_code == 200
+    assert [item['id'] for item in client.get('/api/projects').json()] == [third, first, second]
+    service.init_db()
+    assert [item['id'] for item in client.get('/api/projects').json()] == [third, first, second]
+    assert client.put('/api/projects/order', json={'project_ids': [first, first, second]}).status_code == 422
+    assert client.put('/api/projects/order', json={'project_ids': [first, second]}).status_code == 409
+
+
 def test_ai_classification_rejected_and_no_credentials(client, monkeypatch, tmp_path):
     monkeypatch.setenv('GPT_ENV_FILE', str(tmp_path / 'missing.env'))
     result = client.post('/api/ai/validate')

@@ -91,6 +91,10 @@ def init_db():
         ):
             if column not in project_columns:
                 db.execute(f'ALTER TABLE projects ADD COLUMN {column} {definition}')
+        if 'sort_order' not in project_columns:
+            db.execute('ALTER TABLE projects ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0')
+            for position, project in enumerate(db.execute('SELECT id FROM projects ORDER BY created_at,rowid')):
+                db.execute('UPDATE projects SET sort_order=? WHERE id=?', (position, project['id']))
         if 'labels' not in {r['name'] for r in db.execute('PRAGMA table_info(images)')}:
             db.execute("ALTER TABLE images ADD COLUMN labels TEXT NOT NULL DEFAULT '[]'")
         image_columns = {r['name'] for r in db.execute('PRAGMA table_info(images)')}
@@ -148,6 +152,10 @@ class ProjectUpdate(BaseModel):
 
 class ProjectMerge(BaseModel):
     source_project_id: str = Field(min_length=1, max_length=64)
+
+
+class ProjectOrder(BaseModel):
+    project_ids: list[str] = Field(min_length=1)
 
 
 class Box(BaseModel):
@@ -242,10 +250,23 @@ def health():
 @app.get('/api/projects')
 def projects():
     with database() as db:
-        rows = db.execute('''SELECT p.id, p.name, p.annotation_type, p.created_at, COUNT(i.id) AS total,
+        rows = db.execute('''SELECT p.id, p.name, p.annotation_type, p.created_at, p.sort_order, COUNT(i.id) AS total,
             COALESCE(SUM(i.completed), 0) AS completed FROM projects p
-            LEFT JOIN images i ON i.project_id=p.id GROUP BY p.id ORDER BY p.created_at DESC, p.id''')
+            LEFT JOIN images i ON i.project_id=p.id GROUP BY p.id ORDER BY p.sort_order, p.created_at, p.id''')
         return [dict(row) for row in rows]
+
+
+@app.put('/api/projects/order')
+def reorder_projects(payload: ProjectOrder):
+    if len(payload.project_ids) != len(set(payload.project_ids)):
+        raise HTTPException(422, 'Project order contains duplicate IDs')
+    with database() as db:
+        existing = {row['id'] for row in db.execute('SELECT id FROM projects')}
+        if set(payload.project_ids) != existing:
+            raise HTTPException(409, 'Project list changed. Refresh before reordering.')
+        for position, project_id in enumerate(payload.project_ids):
+            db.execute('UPDATE projects SET sort_order=? WHERE id=?', (position, project_id))
+    return {'project_ids': payload.project_ids}
 
 
 @app.post('/api/projects', status_code=201)
@@ -259,8 +280,9 @@ def create_project(payload: ProjectCreate):
     categories = [{'id': i + 1, 'name': name} for i, name in enumerate(classes)]
     project_id = uuid.uuid4().hex
     with database() as db:
-        db.execute('INSERT INTO projects (id,name,classes,annotation_type) VALUES (?,?,?,?)',
-                   (project_id, name, json.dumps(categories), payload.annotation_type))
+        sort_order = db.execute('SELECT COALESCE(MAX(sort_order),-1)+1 FROM projects').fetchone()[0]
+        db.execute('INSERT INTO projects (id,name,classes,annotation_type,sort_order) VALUES (?,?,?,?,?)',
+                   (project_id, name, json.dumps(categories), payload.annotation_type, sort_order))
         db.execute('INSERT INTO import_batches (id,project_id,kind) VALUES (?,?,?)',
                    (uuid.uuid4().hex, project_id, 'project_created'))
         return get_project(db, project_id)

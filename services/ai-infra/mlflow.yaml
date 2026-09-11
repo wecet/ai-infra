@@ -13,8 +13,6 @@ service:
   networks:
   - id: ~~ENV:NETWORK_NAME~~
     internal: false
-  depends_on:
-  - postgres
   command:
   - mlflow
   - server

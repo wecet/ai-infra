@@ -334,6 +334,25 @@ p {
   animation: absorb-project 1200ms ease-in-out infinite;
 }
 .project-card.absorbing .project-type-icon { transform: scale(1.07); }
+.project-card.reorder-before::before,
+.project-card.reorder-after::before {
+  content: "";
+  position: absolute;
+  z-index: 3;
+  top: 8px;
+  bottom: 8px;
+  width: 4px;
+  border-radius: 3px;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px #75a96f26;
+}
+.project-card.reorder-before::before { left: -8px; }
+.project-card.reorder-after::before { right: -8px; }
+.project-card.reorder-before,
+.project-card.reorder-after {
+  border-color: #7ca77d;
+  background: #f2f8f0;
+}
 .project-card.absorbing::after {
   content: "Release to merge";
   position: absolute;
