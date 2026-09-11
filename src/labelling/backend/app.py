@@ -146,6 +146,10 @@ class ProjectUpdate(BaseModel):
     export_train_percent: int = Field(default=80, ge=0, le=100)
 
 
+class ProjectMerge(BaseModel):
+    source_project_id: str = Field(min_length=1, max_length=64)
+
+
 class Box(BaseModel):
     category_id: int = Field(ge=1)
     x: float = Field(ge=0, allow_inf_nan=False)
@@ -329,6 +333,95 @@ def update_project(project_id: str, payload: ProjectUpdate):
         db.execute('''UPDATE projects SET name=?,description=?,labelling_instructions=?,ai_instructions=?,
             export_train_percent=? WHERE id=?''', (*values, project_id))
         return get_project(db, project_id)
+
+
+@app.post('/api/projects/{project_id}/merge')
+def merge_project(project_id: str, payload: ProjectMerge):
+    source_id = payload.source_project_id
+    if source_id == project_id:
+        raise HTTPException(422, 'A project cannot be merged into itself')
+    moved_files = []
+    with database() as db:
+        root = get_project(db, project_id)
+        source = get_project(db, source_id)
+        if root['annotation_type'] != source['annotation_type']:
+            raise HTTPException(422, 'Image Classification and Object Detection projects cannot be merged')
+        root_classes = list(root['classes'])
+        root_by_name = {item['name'].casefold(): item['id'] for item in root_classes}
+        class_map = {}
+        for category in source['classes']:
+            key = category['name'].casefold()
+            if key not in root_by_name:
+                next_id = max((item['id'] for item in root_classes), default=0) + 1
+                root_classes.append({'id': next_id, 'name': category['name']})
+                root_by_name[key] = next_id
+            class_map[category['id']] = root_by_name[key]
+        source_rows = db.execute('SELECT * FROM images WHERE project_id=? ORDER BY id', (source_id,)).fetchall()
+        existing_paths = {row['source_path'] for row in db.execute(
+            'SELECT source_path FROM images WHERE project_id=?', (project_id,)).fetchall()}
+        planned = []
+        prefix = re.sub(r'[^A-Za-z0-9._-]+', '_', source['name']).strip('._-') or 'merged-project'
+        for row in source_rows:
+            source_path = row['source_path']
+            if source_path in existing_paths:
+                source_path = f'{prefix}/{source_path}'
+                suffix = 2
+                candidate = source_path
+                while candidate in existing_paths:
+                    candidate = f'{prefix}-{suffix}/{row["source_path"]}'
+                    suffix += 1
+                source_path = candidate
+            existing_paths.add(source_path)
+            planned.append((row, source_path))
+        root_directory = DATA / 'images' / project_id
+        root_directory.mkdir(parents=True, exist_ok=True)
+        try:
+            for row, _ in planned:
+                old_path = DATA / 'images' / source_id / row['stored_name']
+                new_path = root_directory / row['stored_name']
+                if not old_path.is_file():
+                    raise HTTPException(409, f'Missing stored image: {row["source_path"]}')
+                if new_path.exists():
+                    raise HTTPException(409, 'A stored image identifier conflicts with the root project')
+                shutil.move(old_path, new_path)
+                moved_files.append((new_path, old_path))
+            freeze_addition_batches(db, project_id)
+            merge_batch = uuid.uuid4().hex
+            details = [{'source_project_id': source_id, 'source_project_name': source['name'],
+                        'images': len(source_rows), 'classes_added': len(root_classes) - len(root['classes'])}]
+            db.execute('''INSERT INTO import_batches (id,project_id,kind,sample_count,details)
+                VALUES (?,?,?,?,?)''', (merge_batch, project_id, 'projects_merged', len(source_rows), json.dumps(details)))
+            for row, source_path in planned:
+                boxes = json.loads(row['boxes'])
+                for box in boxes:
+                    box['category_id'] = class_map[box['category_id']]
+                labels = [class_map[item] for item in json.loads(row['labels'])]
+                db.execute('''UPDATE images SET project_id=?,source_path=?,batch_id=?,boxes=?,labels=? WHERE id=?''',
+                           (project_id, source_path, merge_batch, json.dumps(boxes), json.dumps(labels), row['id']))
+                revisions = db.execute('SELECT id,boxes,labels FROM annotation_revisions WHERE image_id=?',
+                                       (row['id'],)).fetchall()
+                for revision in revisions:
+                    revision_boxes = json.loads(revision['boxes'])
+                    for box in revision_boxes:
+                        box['category_id'] = class_map[box['category_id']]
+                    revision_labels = [class_map[item] for item in json.loads(revision['labels'])]
+                    db.execute('UPDATE annotation_revisions SET boxes=?,labels=? WHERE id=?',
+                               (json.dumps(revision_boxes), json.dumps(revision_labels), revision['id']))
+            db.execute('UPDATE project_comments SET project_id=? WHERE project_id=?', (project_id, source_id))
+            db.execute('DELETE FROM import_batches WHERE project_id=?', (source_id,))
+            db.execute('UPDATE projects SET classes=? WHERE id=?', (json.dumps(root_classes), project_id))
+            db.execute('DELETE FROM projects WHERE id=?', (source_id,))
+        except Exception:
+            for new_path, old_path in reversed(moved_files):
+                old_path.parent.mkdir(parents=True, exist_ok=True)
+                if new_path.exists():
+                    shutil.move(new_path, old_path)
+            raise
+    shutil.rmtree(DATA / 'images' / source_id, ignore_errors=True)
+    shutil.rmtree(DATA / 'deleted' / source_id, ignore_errors=True)
+    with database() as db:
+        return get_project(db, project_id) | {'images_merged': len(moved_files),
+                                              'classes_added': len(root_classes) - len(root['classes'])}
 
 
 @app.delete('/api/projects/{project_id}')

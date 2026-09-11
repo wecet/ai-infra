@@ -312,6 +312,47 @@ p {
   border-radius: 8px;
   box-shadow: 0 3px 9px #1628180b;
   font-weight: 400;
+  cursor: grab;
+  transform-origin: center;
+  transition: transform 180ms ease, border-color 180ms ease, background 180ms ease,
+    box-shadow 180ms ease, opacity 180ms ease;
+  position: relative;
+}
+.project-card:active { cursor: grabbing; }
+.project-card.dragging {
+  opacity: 0.55;
+  transform: rotate(1.5deg) scale(0.97);
+  border-color: #7ca77d;
+  background: #eef6eb;
+  box-shadow: 0 10px 24px #214d2830;
+}
+.project-card.absorbing {
+  z-index: 1;
+  border-color: var(--accent);
+  background: #e8f3e5;
+  box-shadow: 0 0 0 4px #75a96f30, 0 12px 30px #214d2833;
+  animation: absorb-project 720ms ease-in-out infinite;
+}
+.project-card.absorbing::after {
+  content: "Release to merge";
+  position: absolute;
+  inset: 8px 8px auto auto;
+  padding: 4px 7px;
+  border-radius: 4px;
+  color: #fff;
+  background: var(--accent);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .4px;
+}
+@keyframes absorb-project {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.035); }
+}
+.merge-dialog { width: min(520px, 96vw); padding: 24px; }
+@media (prefers-reduced-motion: reduce) {
+  .project-card { transition: none; }
+  .project-card.absorbing { animation: none; transform: scale(1.015); }
 }
 .card-top {
   display: flex;

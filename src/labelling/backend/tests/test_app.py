@@ -127,6 +127,46 @@ def test_project_settings_review_workflow_and_quality(client):
     assert quality['checks_run'] == 7
 
 
+def test_project_merge_remaps_classes_images_revisions_comments_and_history(client):
+    root = client.post('/api/projects', json={'name': 'Root', 'classes': ['Bolt', 'Panel']}).json()
+    source = client.post('/api/projects', json={'name': 'Source Set', 'classes': ['Panel', 'Crack']}).json()
+    root_image = upload(client, root['id'], 'shared/image.png')
+    source_image = upload(client, source['id'], 'shared/image.png')
+    saved = save(client, source['id'], source_image, boxes=[
+        {'category_id': 2, 'x': 10, 'y': 5, 'width': 30, 'height': 20}]).json()
+    assert client.post(f"/api/projects/{source['id']}/comments", json={'body': 'Source progress'}).status_code == 201
+    result = client.post(f"/api/projects/{root['id']}/merge",
+                         json={'source_project_id': source['id']})
+    assert result.status_code == 200, result.text
+    assert result.json()['images_merged'] == 1 and result.json()['classes_added'] == 1
+    assert [item['name'] for item in result.json()['classes']] == ['Bolt', 'Panel', 'Crack']
+    assert client.get(f"/api/projects/{source['id']}").status_code == 404
+    images = client.get(f"/api/projects/{root['id']}/images").json()
+    assert len(images) == 2
+    merged = next(item for item in images if item['id'] == source_image['id'])
+    assert merged['source_path'] == 'Source_Set/shared/image.png'
+    detail = client.get(f"/api/projects/{root['id']}/images/{merged['id']}").json()
+    assert detail['boxes'][0]['category_id'] == 3
+    revisions = client.get(f"/api/projects/{root['id']}/images/{merged['id']}/revisions").json()
+    assert revisions[0]['boxes'][0]['category_id'] == 3
+    assert client.get(f"/api/projects/{root['id']}/images/{merged['id']}/file").status_code == 200
+    assert client.get(f"/api/projects/{root['id']}/comments").json()[0]['body'] == 'Source progress'
+    history = client.get(f"/api/projects/{root['id']}/history").json()
+    assert [(item['kind'], item['sample_delta'], item['total_samples']) for item in history] == [
+        ('project_created', 1, 1), ('projects_merged', 1, 2)]
+    assert client.get(f"/api/projects/{root['id']}/stats").json()['total'] == 2
+
+
+def test_project_merge_rejects_different_annotation_types(client):
+    detection = project(client)
+    classification = client.post('/api/projects', json={'name': 'Classification', 'classes': ['A'],
+        'annotation_type': 'image_classification'}).json()['id']
+    response = client.post(f'/api/projects/{detection}/merge', json={'source_project_id': classification})
+    assert response.status_code == 422
+    assert response.json()['detail'] == 'Image Classification and Object Detection projects cannot be merged'
+    assert client.get(f'/api/projects/{classification}').status_code == 200
+
+
 def test_ai_classification_rejected_and_no_credentials(client, monkeypatch, tmp_path):
     monkeypatch.setenv('GPT_ENV_FILE', str(tmp_path / 'missing.env'))
     result = client.post('/api/ai/validate')

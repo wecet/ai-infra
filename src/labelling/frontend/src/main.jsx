@@ -13,6 +13,12 @@ function App() {
   const [importProjectError, setImportProjectError] = useState("");
   const [pendingImportFile, setPendingImportFile] = useState(null);
   const [importProjectName, setImportProjectName] = useState("");
+  const [draggedProject, setDraggedProject] = useState(null);
+  const [mergeTarget, setMergeTarget] = useState(null);
+  const [pendingMerge, setPendingMerge] = useState(null);
+  const [mergeError, setMergeError] = useState("");
+  const [merging, setMerging] = useState(false);
+  const dragged = useRef(false);
   async function refresh() {
     try {
       setProjects(await api("/projects"));
@@ -56,6 +62,31 @@ function App() {
       setImportProjectName("");
     } catch (e) { setImportProjectError(e.message); }
     finally { setImportingProject(false); }
+  }
+  function finishDrag() {
+    setDraggedProject(null); setMergeTarget(null);
+    setTimeout(() => { dragged.current = false; }, 0);
+  }
+  function dropProject(target) {
+    const source = draggedProject;
+    if (!source || source.id === target.id) { finishDrag(); return; }
+    if (source.annotation_type !== target.annotation_type) {
+      setMergeError("Image Classification and Object Detection projects cannot be merged");
+    } else {
+      setPendingMerge({ source, target });
+    }
+    finishDrag();
+  }
+  async function confirmMerge() {
+    if (!pendingMerge) return;
+    setMerging(true); setMergeError("");
+    try {
+      await api(`/projects/${pendingMerge.target.id}/merge`, {
+        method: "POST", body: JSON.stringify({ source_project_id: pendingMerge.source.id }),
+      });
+      setPendingMerge(null); await refresh();
+    } catch (e) { setMergeError(e.message); }
+    finally { setMerging(false); }
   }
   return (
     <div className="app-shell">
@@ -183,9 +214,20 @@ function App() {
             <div className="project-grid">
               {projects.map((p) => (
                 <button
-                  className="project-card"
+                  className={`project-card ${draggedProject?.id === p.id ? "dragging" : ""} ${mergeTarget?.id === p.id ? "absorbing" : ""}`}
                   key={p.id}
-                  onClick={() => open(p.id)}
+                  draggable
+                  onDragStart={(e) => {
+                    dragged.current = true; setDraggedProject(p); setMergeTarget(null);
+                    e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", p.id);
+                  }}
+                  onDragEnd={finishDrag}
+                  onDragEnter={(e) => { e.preventDefault(); if (draggedProject?.id !== p.id &&
+                    draggedProject?.annotation_type === p.annotation_type) setMergeTarget(p); else setMergeTarget(null); }}
+                  onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
+                  onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setMergeTarget(null); }}
+                  onDrop={(e) => { e.preventDefault(); dropProject(p); }}
+                  onClick={() => { if (!dragged.current) open(p.id); }}
                 >
                   <div className="card-top">
                     <span className="folder-icon">▱</span>
@@ -277,6 +319,17 @@ function App() {
           </div>
         </div>
       )}
+      {pendingMerge && <div className="modal-backdrop"><div className="panel merge-dialog" role="dialog"
+        aria-modal="true" aria-labelledby="merge-title"><div className="eyebrow">MERGE PROJECTS</div>
+        <h2 id="merge-title">Merge “{pendingMerge.source.name}” into “{pendingMerge.target.name}”?</h2>
+        <p>The destination project will keep its name and settings. Images, annotations, classes, and comments from the dragged project will be combined into it. The dragged project will then be removed.</p>
+        <div className="notice"><strong>{pendingMerge.target.name}</strong> will be the root project.</div>
+        <div className="actions"><button disabled={merging} onClick={() => setPendingMerge(null)}>Cancel</button>
+          <button className="primary" disabled={merging} onClick={confirmMerge}>{merging ? "Merging…" : "Merge projects"}</button></div>
+      </div></div>}
+      {mergeError && <div className="modal-backdrop"><div className="panel ai-dialog" role="alertdialog"
+        aria-modal="true" aria-labelledby="merge-error-title"><h2 id="merge-error-title">{mergeError}</h2>
+        <button className="primary" autoFocus onClick={() => setMergeError("")}>OK</button></div></div>}
       <footer className="app-footer">OpenIIoT · Labelling Studio</footer>
     </div>
   );
@@ -811,7 +864,7 @@ function History({ project, onView, onRestored }) {
     {history && <div className="panel table-wrap"><table><thead><tr>
       <th>VERSION</th><th>EVENT</th><th>SAMPLE CHANGE</th><th>TOTAL SAMPLES</th><th>DATE</th><th>DETAILS</th>
     </tr></thead><tbody>{history.map((entry) => <tr key={entry.id}>
-      <td>v{entry.version}</td><td>{entry.kind === "project_created" ? "Project Created" : entry.kind === "images_deleted" ? "Images Deleted" : entry.kind === "images_restored" ? "Images Restored" : "New Additions"}</td>
+      <td>v{entry.version}</td><td>{entry.kind === "project_created" ? "Project Created" : entry.kind === "images_deleted" ? "Images Deleted" : entry.kind === "images_restored" ? "Images Restored" : entry.kind === "projects_merged" ? "Projects Merged" : "New Additions"}</td>
       <td className={entry.sample_delta < 0 ? "warning-text" : "accent"}>{entry.sample_delta > 0 ? "+" : ""}{entry.sample_delta}</td>
       <td>{entry.total_samples}</td><td>{new Date(`${entry.created_at}${entry.created_at.endsWith("Z") ? "" : "Z"}`).toLocaleString()}</td>
       <td>{entry.kind === "images_deleted" ? <details><summary>View deleted image</summary>
