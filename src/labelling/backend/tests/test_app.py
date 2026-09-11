@@ -219,6 +219,16 @@ def test_publish_is_immutable_and_bulk_review_approves_selection(client):
     assert before['sample_count'] == 2 and before['snapshot']['images'][0]['boxes']
     assert {item['source_path'] for item in before['snapshot']['images']} == {'first.png', 'second.png'}
     assert client.get(f"/api/projects/{pid}/versions/{version_id}/images/{first['id']}/file").status_code == 200
+
+    exported_version = client.get(f'/api/projects/{pid}/versions/{version_id}/export')
+    assert exported_version.status_code == 200
+    assert f'Inspection_{published.json()["name"]}.zip' in exported_version.headers['content-disposition']
+    with zipfile.ZipFile(io.BytesIO(exported_version.content)) as archive:
+        annotation_name = f'annotations/Inspection_{published.json()["name"]}.json'
+        frozen = json.loads(archive.read(annotation_name))
+        assert frozen['info']['published_version'] == published.json()['name']
+        assert len(frozen['images']) == 2 and len(frozen['annotations']) == 1
+        assert all(image['file_name'] in archive.namelist() for image in frozen['images'])
     assert save(client, pid, first, boxes=[]).status_code == 200
     after = client.get(f'/api/projects/{pid}/versions/{version_id}').json()
     assert after['snapshot'] == before['snapshot']

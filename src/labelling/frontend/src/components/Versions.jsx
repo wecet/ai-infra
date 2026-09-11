@@ -4,10 +4,23 @@ import { api } from "../api";
 function Versions({ project }) {
   const [versions, setVersions] = useState(null); const [selected, setSelected] = useState(null);
   const [error, setError] = useState("");
+  const [exporting, setExporting] = useState("");
   useEffect(() => { api(`/projects/${project.id}/versions`).then(setVersions).catch((e) => setError(e.message)); }, [project.id]);
   async function open(item) {
     try { setSelected(await api(`/projects/${project.id}/versions/${item.id}`)); }
     catch (e) { setError(e.message); }
+  }
+  async function download(item) {
+    setExporting(item.id); setError("");
+    try {
+      const response = await fetch(`/api/projects/${project.id}/versions/${item.id}/export`);
+      if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail || "Version export failed");
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a"); link.href = url;
+      link.download = `${project.name.replace(/[^A-Za-z0-9._-]+/g, "_")}_${item.name}.zip`;
+      document.body.appendChild(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) { setError(e.message); } finally { setExporting(""); }
   }
   return <div><div className="page-heading"><div><h2>Published versions</h2>
     <p className="muted">Immutable snapshots created from Dashboard.</p></div></div>
@@ -16,7 +29,9 @@ function Versions({ project }) {
     {!!versions?.length && <div className="panel table-wrap"><table><thead><tr><th>VERSION</th><th>SAMPLES</th><th>PUBLISHED BY</th><th>DATE</th><th></th></tr></thead>
       <tbody>{versions.map((item) => <tr key={item.id}><td><strong>{item.name}</strong></td><td>{item.sample_count}</td>
         <td>{item.author}</td><td>{new Date(`${item.created_at}${item.created_at.endsWith("Z") ? "" : "Z"}`).toLocaleString()}</td>
-        <td><button className="text-button" onClick={() => open(item)}>View snapshot</button></td></tr>)}</tbody></table></div>}
+        <td><div className="version-actions"><button onClick={() => open(item)}>View</button>
+          <button className="primary" disabled={!!exporting} onClick={() => download(item)}>
+            {exporting === item.id ? "Exporting…" : "Export ZIP"}</button></div></td></tr>)}</tbody></table></div>}
     {selected && <div className="modal-backdrop"><div className="panel version-modal"><div className="modal-heading"><div>
       <div className="eyebrow">IMMUTABLE DATASET SNAPSHOT</div><h2>{selected.name}</h2></div><button onClick={() => setSelected(null)}>Close</button></div>
       <p className="muted">{selected.sample_count} samples · {selected.snapshot.project.classes.length} classes · published by {selected.author}</p>
@@ -28,4 +43,3 @@ function Versions({ project }) {
 }
 
 export default Versions;
-

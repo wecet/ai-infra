@@ -54,6 +54,47 @@ def version_detail(project_id: str, version_id: str):
             'snapshot': json.loads(row['snapshot'])}
 
 
+@router.get('/api/projects/{project_id}/versions/{version_id}/export')
+def export_version(project_id: str, version_id: str):
+    detail = version_detail(project_id, version_id)
+    snapshot = detail['snapshot']
+    project = snapshot['project']
+    safe_project = re.sub(r'[^A-Za-z0-9._-]+', '_', project['name']).strip('._-')[:80] or 'project'
+    archive_name = f"{safe_project}_{detail['name']}"
+    fd, temp_path = tempfile.mkstemp(suffix='.zip')
+    os.close(fd)
+    try:
+        coco = {'info': {'description': project.get('description', ''), 'project_name': project['name'],
+                 'annotation_type': project['annotation_type'], 'published_version': detail['name'],
+                 'date_created': detail['created_at'], 'images_annotated': len(snapshot['images'])},
+                'licenses': [], 'images': [], 'annotations': [],
+                'categories': [category | {'supercategory': ''} for category in project['classes']]}
+        with zipfile.ZipFile(temp_path, 'w', zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr('annotations/', b'')
+            archive.writestr('images/', b'')
+            for item in snapshot['images']:
+                image_id = len(coco['images']) + 1
+                record = {'id': image_id, 'file_name': f"images/{item['stored_name']}",
+                          'width': item['width'], 'height': item['height'],
+                          'source_path': item['source_path']}
+                if project['annotation_type'] == 'image_classification':
+                    record['category_ids'] = item['labels']
+                coco['images'].append(record)
+                archive.write(DATA / 'versions' / project_id / version_id / item['stored_name'],
+                              record['file_name'])
+                for box in item['boxes']:
+                    coco['annotations'].append({'id': len(coco['annotations']) + 1, 'image_id': image_id,
+                        'category_id': box['category_id'],
+                        'bbox': [box['x'], box['y'], box['width'], box['height']],
+                        'area': box['width'] * box['height'], 'iscrowd': 0, 'segmentation': []})
+            archive.writestr(f'annotations/{archive_name}.json', json.dumps(coco, indent=2))
+    except Exception:
+        Path(temp_path).unlink(missing_ok=True)
+        raise
+    return FileResponse(temp_path, media_type='application/zip', filename=f'{archive_name}.zip',
+                        background=BackgroundTask(lambda: Path(temp_path).unlink(missing_ok=True)))
+
+
 @router.get('/api/projects/{project_id}/versions/{version_id}/images/{image_id}/file')
 def version_image_file(project_id: str, version_id: str, image_id: str):
     detail = version_detail(project_id, version_id)
