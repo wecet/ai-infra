@@ -19,6 +19,6 @@ The labeller source moved from `labelling/` to `src/labelling/`. Its container d
 | lakeFS | `/data` | `LAKEFS_VOLUME` |
 | Labeller | `/data` | `LABELLING_VOLUME` |
 
-Stop the consuming service before backing up its entire volume. The labeller requires its SQLite database, active images under `/data/images`, and restorable deleted-image archives under `/data/deleted`; the database includes annotations, review state, revision history, dataset history, project settings, and comments. Backing up only SQLite produces deletion records whose archived previews cannot be restored. Restore onto the same target host and set the profile to the restored volume name. Moving `HOST_APP` to another machine does not transfer named-volume data.
+Stop the consuming service before backing up its entire volume. The labeller requires SQLite, active images under `/data/images`, deleted-image archives under `/data/deleted`, and published snapshots under `/data/versions`. Backing up only SQLite leaves deletion and version records without their image files. Restore onto the same target host and set the profile to the restored volume name.
 
 Never use `down -v` when retaining data: Compose can delete the configured named volumes. Deployment Manager and Compose share the configured physical volume names, even though their network/container naming differs.

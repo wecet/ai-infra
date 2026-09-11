@@ -3,6 +3,8 @@ import { createRoot } from "react-dom/client";
 import { api, color } from "./api";
 import "./style.css";
 
+const classColor = (project, id) => project.classes.find((item) => item.id === id)?.color || color(id);
+
 function App() {
   const [projects, setProjects] = useState([]);
   const [project, setProject] = useState(null);
@@ -670,6 +672,10 @@ function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
           onClick={() => setTab("settings")}>
           ⚙ Settings
         </button>
+        <button disabled={locked} className={tab === "versions" ? "selected" : ""}
+          onClick={() => setTab("versions")}>
+          ◈ Versions
+        </button>
         <span>
           {images.filter((i) => i.completed).length} / {images.length} complete
         </span>
@@ -708,14 +714,16 @@ function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
         </div>
       )}
       {tab === "stats" ? (
-        <Stats project={project} />
+        <Stats project={project} onPublished={() => setTab("versions")} />
       ) : tab === "settings" ? (
         <Settings project={project} onUpdated={onUpdated} />
+      ) : tab === "versions" ? (
+        <Versions project={project} />
       ) : tab === "history" ? (
         <History project={project} onRestored={() => refresh()}
           onView={(list) => { setReviewImages(list); setTab("review"); }} />
       ) : tab === "review" ? (
-        <Review project={project} images={reviewImages || images.filter((item) => item.completed)}
+        <Review project={project} images={reviewImages || images}
           filtered={!!reviewImages} onClear={() => setReviewImages(null)}
           onReviewed={(saved) => setImages((list) => list.map((item) => item.id === saved.id ? { ...item, ...saved } : item))}
           onEdit={(id) => { const next = images.findIndex((item) => item.id === id); if (next >= 0) setIndex(next); setTab("annotate"); }} />
@@ -750,7 +758,9 @@ function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
             setImages((list) =>
               list.map((i) =>
                 i.id === saved.id ? { ...i, completed: saved.completed, review_status: saved.review_status,
-                  review_comment: saved.review_comment, reviewed_by: saved.reviewed_by, reviewed_at: saved.reviewed_at } : i,
+                  review_comment: saved.review_comment, reviewed_by: saved.reviewed_by, reviewed_at: saved.reviewed_at,
+                  annotation_count: saved.boxes.length + saved.labels.length,
+                  category_ids: [...new Set([...saved.labels, ...saved.boxes.map((box) => box.category_id)])] } : i,
               ),
             );
             onRefresh();
@@ -783,8 +793,8 @@ function AnnotationPreview({ project, image }) {
       {data && project.annotation_type === "object_detection" && (
         <svg viewBox={`0 0 ${image.width} ${image.height}`} preserveAspectRatio="none">
           {data.boxes.map((box, index) => <rect key={index} x={box.x} y={box.y}
-            width={box.width} height={box.height} fill={color(box.category_id)} fillOpacity=".12"
-            stroke={color(box.category_id)} strokeWidth="2" vectorEffect="non-scaling-stroke" />)}
+            width={box.width} height={box.height} fill={classColor(project, box.category_id)} fillOpacity=".12"
+            stroke={classColor(project, box.category_id)} strokeWidth="2" vectorEffect="non-scaling-stroke" />)}
         </svg>
       )}
       {data && project.annotation_type === "image_classification" && (
@@ -797,11 +807,21 @@ function AnnotationPreview({ project, image }) {
 
 function Review({ project, images, filtered, onClear, onEdit, onReviewed }) {
   const [status, setStatus] = useState("all");
+  const [query, setQuery] = useState("");
+  const [category, setCategory] = useState("all");
+  const [completion, setCompletion] = useState("all");
+  const [count, setCount] = useState("all");
+  const [selected, setSelected] = useState([]);
   const [rejecting, setRejecting] = useState(null);
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
-  const visible = status === "all" ? images : images.filter((image) => image.review_status === status);
+  const visible = images.filter((image) =>
+    (status === "all" || image.review_status === status) &&
+    (completion === "all" || image.completed === (completion === "complete")) &&
+    (category === "all" || image.category_ids?.includes(Number(category))) &&
+    (count === "all" || (count === "empty" ? image.annotation_count === 0 : image.annotation_count > 0)) &&
+    image.source_path.toLowerCase().includes(query.trim().toLowerCase()));
   async function decide(image, nextStatus, reason = "") {
     setBusy(image.id); setError("");
     try {
@@ -812,11 +832,21 @@ function Review({ project, images, filtered, onClear, onEdit, onReviewed }) {
     } catch (e) { setError(e.message); }
     finally { setBusy(""); }
   }
+  async function approveSelected() {
+    setBusy("bulk"); setError("");
+    try {
+      const result = await api(`/projects/${project.id}/review/bulk`, { method: "PUT",
+        body: JSON.stringify({ image_ids: selected, status: "approved" }) });
+      selected.forEach((id) => onReviewed({ id, review_status: "approved", review_comment: "",
+        reviewed_by: result.reviewed_by, reviewed_at: result.reviewed_at }));
+      setSelected([]);
+    } catch (e) { setError(e.message); } finally { setBusy(""); }
+  }
   return (
     <div>
       <div className="page-heading">
         <div><h2>Review annotations</h2><p className="muted">
-          {filtered ? `${images.length} images from this history entry.` : `${images.length} completed images ready for review.`}
+          {filtered ? `${images.length} images from this history entry.` : `${images.length} project images available to search and review.`}
         </p></div>
         <div className="review-actions"><select aria-label="Filter review status" value={status}
           onChange={(e) => setStatus(e.target.value)}>
@@ -824,18 +854,34 @@ function Review({ project, images, filtered, onClear, onEdit, onReviewed }) {
           <option value="approved">Approved</option><option value="rejected">Rejected</option>
         </select>{filtered && <button onClick={onClear}>Show all completed</button>}</div>
       </div>
+      <div className="panel review-filters">
+        <input aria-label="Search images" placeholder="Search filename…" value={query} onChange={(e) => setQuery(e.target.value)} />
+        <select aria-label="Filter class" value={category} onChange={(e) => setCategory(e.target.value)}>
+          <option value="all">All classes</option>{project.classes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+        </select>
+        <select aria-label="Filter completion" value={completion} onChange={(e) => setCompletion(e.target.value)}>
+          <option value="all">Complete and incomplete</option><option value="complete">Complete</option><option value="incomplete">Incomplete</option>
+        </select>
+        <select aria-label="Filter annotation count" value={count} onChange={(e) => setCount(e.target.value)}>
+          <option value="all">Any annotation count</option><option value="annotated">Has annotations</option><option value="empty">No annotations</option>
+        </select>
+        <button className="primary" disabled={!selected.length || busy === "bulk"} onClick={approveSelected}>
+          {busy === "bulk" ? "Approving…" : `Approve selected (${selected.length})`}</button>
+      </div>
       {error && <div className="alert">{error}</div>}
       {!visible.length ? <div className="empty"><h2>No annotations to review</h2>
         <p>Complete an image or open a history entry containing images.</p></div> :
         <div className="review-grid">{visible.map((image) =>
           <article className="panel review-card" key={image.id}>
+            <label className="review-select"><input type="checkbox" checked={selected.includes(image.id)}
+              disabled={!image.completed} onChange={(e) => setSelected(e.target.checked ? [...selected, image.id] : selected.filter((id) => id !== image.id))} /> Select</label>
             <AnnotationPreview project={project} image={image} />
             <div className="review-card-footer"><div className="truncate"><strong>{image.source_path}</strong>
               <div className="muted small">{image.width} × {image.height} · {(image.review_status || "draft").replaceAll("_", " ")}</div>
               {image.review_comment && <div className="small warning-text">{image.review_comment}</div>}</div>
               <div className="review-actions"><button onClick={() => onEdit(image.id)}>Edit</button>
-                <button disabled={busy === image.id} onClick={() => setRejecting(image)}>Reject</button>
-                <button className="primary" disabled={busy === image.id || image.review_status === "approved"}
+                <button disabled={!image.completed || busy === image.id} onClick={() => setRejecting(image)}>Reject</button>
+                <button className="primary" disabled={!image.completed || busy === image.id || image.review_status === "approved"}
                   onClick={() => decide(image, "approved")}>Approve</button></div></div>
           </article>)}</div>}
       {rejecting && <div className="modal-backdrop"><form className="panel export-modal" onSubmit={(e) => {
@@ -853,6 +899,8 @@ function Settings({ project, onUpdated }) {
     labelling_instructions: project.labelling_instructions || "", ai_instructions: project.ai_instructions || "",
     export_train_percent: project.export_train_percent ?? 80 });
   const [saving, setSaving] = useState(false); const [message, setMessage] = useState("");
+  const [newClass, setNewClass] = useState(""); const [newColor, setNewColor] = useState("#2b702e");
+  const [classBusy, setClassBusy] = useState(false);
   function field(name) { return { value: form[name], onChange: (e) => setForm({ ...form,
     [name]: e.target.type === "number" ? Number(e.target.value) : e.target.value }) }; }
   async function submit(e) {
@@ -860,6 +908,25 @@ function Settings({ project, onUpdated }) {
     try { const saved = await api(`/projects/${project.id}`, { method: "PUT", body: JSON.stringify(form) });
       onUpdated(saved); setMessage("Project settings saved."); }
     catch (e) { setMessage(e.message); } finally { setSaving(false); }
+  }
+  async function updateCategory(item, changes) {
+    setClassBusy(true); setMessage("");
+    try { onUpdated(await api(`/projects/${project.id}/classes/${item.id}`, { method: "PUT",
+      body: JSON.stringify({ name: item.name, color: item.color || color(item.id), archived: !!item.archived, ...changes }) })); }
+    catch (e) { setMessage(e.message); } finally { setClassBusy(false); }
+  }
+  async function addCategory(e) {
+    e.preventDefault(); setClassBusy(true); setMessage("");
+    try { onUpdated(await api(`/projects/${project.id}/classes`, { method: "POST",
+      body: JSON.stringify({ name: newClass, color: newColor }) })); setNewClass(""); }
+    catch (e) { setMessage(e.message); } finally { setClassBusy(false); }
+  }
+  async function mergeCategory(source, targetId) {
+    if (!targetId || !window.confirm(`Merge “${source.name}” into the selected class? Existing annotations will be remapped.`)) return;
+    setClassBusy(true); setMessage("");
+    try { onUpdated(await api(`/projects/${project.id}/classes/${source.id}/merge`, { method: "POST",
+      body: JSON.stringify({ target_category_id: Number(targetId) }) })); }
+    catch (e) { setMessage(e.message); } finally { setClassBusy(false); }
   }
   return <form className="panel settings-form" onSubmit={submit}><div><h2>Project settings</h2>
     <p className="muted">Guidance is shared with labellers. AI guidance is also included in automatic suggestions.</p></div>
@@ -869,6 +936,23 @@ function Settings({ project, onUpdated }) {
     {project.annotation_type === "object_detection" && <label>AI instructions<textarea rows="5" maxLength="4000"
       placeholder="Project-specific criteria for AI-generated boxes." {...field("ai_instructions")} /></label>}
     <label>Default train split (%)<input type="number" min="0" max="100" {...field("export_train_percent")} /></label>
+    <section className="class-management"><div><h3>Classes</h3><p className="muted">Rename, recolour, archive, or merge classes. Existing annotations follow merged classes.</p></div>
+      {project.classes.map((item) => <div className={`managed-class ${item.archived ? "archived" : ""}`} key={item.id}>
+        <input type="color" aria-label={`${item.name} colour`} value={item.color || color(item.id)} disabled={classBusy}
+          onChange={(e) => updateCategory(item, { color: e.target.value })} />
+        <input aria-label={`Rename ${item.name}`} defaultValue={item.name} disabled={classBusy}
+          onBlur={(e) => { if (e.target.value.trim() && e.target.value.trim() !== item.name) updateCategory(item, { name: e.target.value }); }} />
+        <button type="button" disabled={classBusy} onClick={() => updateCategory(item, { archived: !item.archived })}>
+          {item.archived ? "Restore" : "Archive"}</button>
+        <select aria-label={`Merge ${item.name}`} defaultValue="" disabled={classBusy}
+          onChange={(e) => { mergeCategory(item, e.target.value); e.target.value = ""; }}><option value="">Merge into…</option>
+          {project.classes.filter((target) => target.id !== item.id).map((target) => <option key={target.id} value={target.id}>{target.name}</option>)}</select>
+      </div>)}
+      <div className="managed-class add-class"><input type="color" aria-label="New class colour" value={newColor}
+        onChange={(e) => setNewColor(e.target.value)} /><input placeholder="New class name" maxLength="100" value={newClass}
+        onChange={(e) => setNewClass(e.target.value)} /><button type="button" className="primary" disabled={classBusy || !newClass.trim()}
+        onClick={addCategory}>Add class</button></div>
+    </section>
     {message && <div className={message.endsWith("saved.") ? "notice" : "alert"}>{message}</div>}
     <div className="actions"><button className="primary" disabled={saving}>{saving ? "Saving…" : "Save settings"}</button></div>
   </form>;
@@ -918,6 +1002,32 @@ function History({ project, onView, onRestored }) {
   </div>;
 }
 
+function Versions({ project }) {
+  const [versions, setVersions] = useState(null); const [selected, setSelected] = useState(null);
+  const [error, setError] = useState("");
+  useEffect(() => { api(`/projects/${project.id}/versions`).then(setVersions).catch((e) => setError(e.message)); }, [project.id]);
+  async function open(item) {
+    try { setSelected(await api(`/projects/${project.id}/versions/${item.id}`)); }
+    catch (e) { setError(e.message); }
+  }
+  return <div><div className="page-heading"><div><h2>Published versions</h2>
+    <p className="muted">Immutable snapshots created from Dashboard.</p></div></div>
+    {error && <div className="alert">{error}</div>}
+    {versions && !versions.length && <div className="empty"><h2>No published versions</h2><p>Use Publish on Dashboard to freeze the current dataset state.</p></div>}
+    {!!versions?.length && <div className="panel table-wrap"><table><thead><tr><th>VERSION</th><th>SAMPLES</th><th>PUBLISHED BY</th><th>DATE</th><th></th></tr></thead>
+      <tbody>{versions.map((item) => <tr key={item.id}><td><strong>{item.name}</strong></td><td>{item.sample_count}</td>
+        <td>{item.author}</td><td>{new Date(`${item.created_at}${item.created_at.endsWith("Z") ? "" : "Z"}`).toLocaleString()}</td>
+        <td><button className="text-button" onClick={() => open(item)}>View snapshot</button></td></tr>)}</tbody></table></div>}
+    {selected && <div className="modal-backdrop"><div className="panel version-modal"><div className="modal-heading"><div>
+      <div className="eyebrow">IMMUTABLE DATASET SNAPSHOT</div><h2>{selected.name}</h2></div><button onClick={() => setSelected(null)}>Close</button></div>
+      <p className="muted">{selected.sample_count} samples · {selected.snapshot.project.classes.length} classes · published by {selected.author}</p>
+      <div className="version-grid">{selected.snapshot.images.map((image) => <figure key={image.id}>
+        <img src={`/api/projects/${project.id}/versions/${selected.id}/images/${image.id}/file`} alt={image.source_path} />
+        <figcaption title={image.source_path}>{image.source_path}<span>{image.completed ? "Complete" : "Draft"} · {image.boxes.length + image.labels.length} annotations</span></figcaption>
+      </figure>)}</div></div></div>}
+  </div>;
+}
+
 function Editor({
   project,
   image,
@@ -933,8 +1043,9 @@ function Editor({
   onSaved,
   onDeleted,
 }) {
+  const activeClasses = project.classes.filter((item) => !item.archived);
   const [data, setData] = useState(null);
-  const [category, setCategory] = useState(project.classes[0].id);
+  const [category, setCategory] = useState(activeClasses[0].id);
   const [selected, setSelected] = useState(null);
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -1151,7 +1262,7 @@ function Editor({
       else if (e.key === "Enter" && !disabled && !dirty) complete();
       else if ((e.key === "+" || e.key === "=") && zoom < 3) setZoom((value) => Math.min(3, value + .25));
       else if (e.key === "-" && zoom > 1) setZoom((value) => Math.max(1, value - .25));
-      else if (/^[1-9]$/.test(e.key) && project.classes[Number(e.key) - 1]) setCategory(project.classes[Number(e.key) - 1].id);
+      else if (/^[1-9]$/.test(e.key) && activeClasses[Number(e.key) - 1]) setCategory(activeClasses[Number(e.key) - 1].id);
     }
     window.addEventListener("keydown", shortcut);
     return () => window.removeEventListener("keydown", shortcut);
@@ -1270,9 +1381,9 @@ function Editor({
                       y={b.y}
                       width={b.width}
                       height={b.height}
-                      fill={color(b.category_id)}
+                      fill={classColor(project, b.category_id)}
                       fillOpacity={selected === i ? ".2" : ".08"}
-                      stroke={color(b.category_id)}
+                      stroke={classColor(project, b.category_id)}
                       strokeWidth={selected === i ? 3 : 2}
                       vectorEffect="non-scaling-stroke"
                       onPointerDown={(e) => start(e, i)}
@@ -1281,7 +1392,7 @@ function Editor({
                     <text
                       x={b.x + 3}
                       y={Math.max(12, b.y - 5)}
-                      fill={color(b.category_id)}
+                      fill={classColor(project, b.category_id)}
                       fontSize={Math.max(12, image.width / 70)}
                       paintOrder="stroke"
                       stroke="#111"
@@ -1299,7 +1410,7 @@ function Editor({
                         y={b.y + b.height - image.width / 100}
                         width={image.width / 100}
                         height={image.width / 100}
-                        fill={color(b.category_id)}
+                        fill={classColor(project, b.category_id)}
                         onPointerDown={(e) => start(e, i, true)}
                         style={{ cursor: "nwse-resize" }}
                       />
@@ -1363,11 +1474,11 @@ function Editor({
         <aside className="annotation-panel">
           <div className="panel-section">
             <div className="section-title">
-              CLASSES <span>{project.classes.length}</span>
+              CLASSES <span>{activeClasses.length}</span>
             </div>
             <p className="muted small">{classification ? "Select all classes present in this image." : "Select a class, then drag to draw."}</p>
             <div className="class-list">
-              {project.classes.map((c) => (
+              {activeClasses.map((c) => (
                 <button
                   key={c.id}
                   className={`class-choice ${(classification ? data?.labels?.includes(c.id) : category === c.id) ? "chosen" : ""}`}
@@ -1380,7 +1491,7 @@ function Editor({
                 >
                   <span
                     className="small-dot"
-                    style={{ background: color(c.id) }}
+                    style={{ background: classColor(project, c.id) }}
                   />
                   {c.name}
                   <span>{(classification ? data?.labels?.includes(c.id) : category === c.id) ? "●" : ""}</span>
@@ -1406,7 +1517,7 @@ function Editor({
                   disabled={disabled || dirty || !!draft}
                   onClick={() => setSelected(i)}
                 >
-                  <span style={{ color: color(b.category_id) }}>□</span> {i + 1}
+                  <span style={{ color: classColor(project, b.category_id) }}>□</span> {i + 1}
                 </button>
                 <select
                   aria-label={`Class for box ${i + 1}`}
@@ -1423,7 +1534,7 @@ function Editor({
                     })
                   }
                 >
-                  {project.classes.map((c) => (
+                  {activeClasses.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
                     </option>
@@ -1531,7 +1642,7 @@ function Comments({ project }) {
   </section>;
 }
 
-function Stats({ project }) {
+function Stats({ project, onPublished }) {
   const classification = project.annotation_type === "image_classification";
   const [stats, setStats] = useState(null);
   const [error, setError] = useState("");
@@ -1542,6 +1653,7 @@ function Stats({ project }) {
   const [quality, setQuality] = useState(null);
   const [duplicates, setDuplicates] = useState(null);
   const [showDuplicates, setShowDuplicates] = useState(false);
+  const [publishing, setPublishing] = useState(false);
   async function load() {
     try {
       const [nextStats, nextQuality] = await Promise.all([
@@ -1595,6 +1707,11 @@ function Stats({ project }) {
     try { setDuplicates(await api(`/projects/${project.id}/duplicates`)); }
     catch (e) { setError(e.message); setShowDuplicates(false); }
   }
+  async function publish() {
+    setPublishing(true); setError("");
+    try { await api(`/projects/${project.id}/publish`, { method: "POST" }); onPublished(); }
+    catch (e) { setError(e.message); } finally { setPublishing(false); }
+  }
   const trainCount = stats
     ? Math.floor((stats.completed * train) / 100 + 0.5)
     : 0;
@@ -1615,13 +1732,10 @@ function Stats({ project }) {
                 {project.description || "A clear picture of your labelling progress."}
               </p>
             </div>
-            <button
-              className="primary"
-              disabled={!stats.completed || exporting}
-              onClick={() => setShowExport(true)}
-            >
-              ↓ Export dataset
-            </button>
+            <div className="actions"><button disabled={publishing} onClick={publish}>
+              {publishing ? "Publishing…" : "◈ Publish"}</button>
+              <button className="primary" disabled={!stats.completed || exporting} onClick={() => setShowExport(true)}>
+                ↓ Export dataset</button></div>
           </div>
           <div className="kpi-grid">
             {[
@@ -1678,7 +1792,7 @@ function Stats({ project }) {
                       <td>
                         <span
                           className="small-dot"
-                          style={{ background: color(c.id) }}
+                          style={{ background: classColor(project, c.id) }}
                         />
                         {c.name}
                       </td>
@@ -1688,7 +1802,7 @@ function Stats({ project }) {
                             <span
                               style={{
                                 width: `${(classification ? stats.labels : stats.boxes) ? ((classification ? c.labels : c.boxes) / (classification ? stats.labels : stats.boxes)) * 100 : 0}%`,
-                                background: color(c.id),
+                                background: classColor(project, c.id),
                               }}
                             />
                           </div>

@@ -79,8 +79,7 @@ button,
   color: #142337;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s;
-  min-height: 30px;
+  min-height: 32px;
 }
 button:hover,
 .button:hover {
@@ -264,6 +263,7 @@ h2 {
   font-size: 14px;
   margin: 0 0 6px;
 }
+h3 { font-size: 12px; margin: 0 0 5px; }
 p {
   line-height: 1.5;
   margin: 5px 0;
@@ -314,8 +314,6 @@ p {
   font-weight: 400;
   cursor: grab;
   transform-origin: center;
-  transition: transform 180ms ease, border-color 180ms ease, background 180ms ease,
-    box-shadow 180ms ease, opacity 180ms ease;
   position: relative;
 }
 .project-card:active { cursor: grabbing; }
@@ -371,7 +369,6 @@ p {
 }
 .merge-dialog { width: min(520px, 96vw); padding: 24px; }
 @media (prefers-reduced-motion: reduce) {
-  .project-card { transition: none; }
   .project-card.absorbing { animation: none; transform: scale(1.02); }
 }
 .card-top {
@@ -388,7 +385,6 @@ p {
   border-radius: 8px;
   font-size: 21px;
   font-weight: 700;
-  transition: transform 180ms ease;
 }
 .project-card-detection { border-color: #b8cdb7; background: #fbfdf9; }
 .project-card-detection .project-type-icon { color: #27692b; background: #e5f1e2; }
@@ -460,6 +456,9 @@ textarea {
   padding: 8px;
   color: #142337;
   min-width: 0;
+}
+input:not([type="range"]):not([type="checkbox"]):not([type="color"]), select {
+  min-height: 32px;
 }
 textarea {
   display: block;
@@ -547,6 +546,7 @@ label > input:not([type="file"]) {
   color: #435045;
   padding: 6px 12px;
   font-size: 11px;
+  min-width: 86px;
 }
 .tabs button.selected {
   background: #edf4e8;
@@ -620,8 +620,10 @@ label > input:not([type="file"]) {
   white-space: nowrap;
 }
 .zoom-controls button {
-  padding: 4px 7px;
+  padding: 4px 8px;
   font-size: 11px;
+  width: 32px;
+  min-width: 32px;
   border: 0;
   background: none;
 }
@@ -687,6 +689,8 @@ label > input:not([type="file"]) {
 }
 .image-navigation button {
   padding: 5px 9px;
+  width: 32px;
+  min-width: 32px;
 }
 .image-navigation select {
   font-size: 11px;
@@ -828,6 +832,22 @@ details summary { color: var(--accent); cursor: pointer; font-weight: 600; font-
   gap: 12px;
 }
 .review-card { padding: 0; overflow: hidden; }
+.review-card { position: relative; }
+.review-select { position: absolute; z-index: 2; top: 8px; left: 8px; display: flex; gap: 5px;
+  align-items: center; padding: 5px 7px; border-radius: 4px; background: #fffffff0; box-shadow: 0 2px 6px #14271820; }
+.review-filters { display: grid; grid-template-columns: 2fr repeat(3, minmax(135px, 1fr)) auto;
+  gap: 8px; align-items: center; margin-bottom: 12px; padding: 10px; }
+.class-management { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 16px; }
+.managed-class { display: grid; grid-template-columns: 42px minmax(140px, 1fr) auto minmax(130px, auto); gap: 8px; align-items: center; }
+.managed-class input[type="color"] { width: 38px; height: 32px; padding: 2px; }
+.managed-class.archived { opacity: .62; }
+.managed-class.add-class { grid-template-columns: 42px minmax(140px, 1fr) auto; }
+.version-modal { width: min(900px, 96vw); max-height: 90vh; overflow: auto; }
+.version-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+.version-grid figure { margin: 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: #f8faf7; }
+.version-grid img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: contain; background: #182019; }
+.version-grid figcaption { display: grid; gap: 3px; padding: 7px; font-size: 10px; overflow-wrap: anywhere; }
+.version-grid figcaption span { color: var(--muted); }
 .preview-image { position: relative; background: #e8ede8; overflow: hidden; line-height: 0; }
 .preview-image img { width: 100%; height: auto; display: block; }
 .preview-image svg { position: absolute; inset: 0; width: 100%; height: 100%; }
@@ -1022,6 +1042,9 @@ input[type="range"] {
     grid-template-columns: repeat(2, 1fr);
   }
   .image-adjustments { flex-wrap: wrap; gap: 8px; }
+  .review-filters { grid-template-columns: 1fr 1fr; }
+  .managed-class { grid-template-columns: 38px 1fr; }
+  .managed-class > button, .managed-class > select { grid-column: auto; }
 }
 @media (max-width: 480px) {
   .masthead {
@@ -1052,6 +1075,7 @@ input[type="range"] {
   .project-grid {
     grid-template-columns: 1fr;
   }
+  .review-filters { grid-template-columns: 1fr; }
   .image-navigation select {
     max-width: 205px;
   }

@@ -181,6 +181,53 @@ def test_project_card_order_persists_and_rejects_stale_lists(client):
     assert client.put('/api/projects/order', json={'project_ids': [first, second]}).status_code == 409
 
 
+def test_class_management_remaps_annotations_and_revisions(client):
+    pid = project(client)
+    added = client.post(f'/api/projects/{pid}/classes', json={'name': 'Crack', 'color': '#123abc'})
+    assert added.status_code == 201 and added.json()['classes'][-1]['id'] == 3
+    updated = client.put(f'/api/projects/{pid}/classes/3', json={
+        'name': 'Surface crack', 'color': '#abcdef', 'archived': True})
+    assert updated.status_code == 200 and updated.json()['classes'][-1]['archived'] is True
+    image = upload(client, pid)
+    saved = save(client, pid, image, boxes=[
+        {'category_id': 3, 'x': 10, 'y': 5, 'width': 30, 'height': 20}])
+    assert saved.status_code == 200
+    merged = client.post(f'/api/projects/{pid}/classes/3/merge', json={'target_category_id': 1})
+    assert merged.status_code == 200
+    assert [item['id'] for item in merged.json()['classes']] == [1, 2]
+    detail = client.get(f"/api/projects/{pid}/images/{image['id']}").json()
+    assert detail['boxes'][0]['category_id'] == 1
+    revisions = client.get(f"/api/projects/{pid}/images/{image['id']}/revisions").json()
+    assert revisions[0]['boxes'][0]['category_id'] == 1
+    assert client.post(f'/api/projects/{pid}/classes', json={'name': 'bolt', 'color': '#123456'}).status_code == 422
+
+
+def test_publish_is_immutable_and_bulk_review_approves_selection(client):
+    pid = project(client)
+    first = upload(client, pid, 'first.png')
+    second = upload(client, pid, 'second.png', (90, 70))
+    first = save(client, pid, first).json()
+    second = save(client, pid, second, boxes=[]).json()
+    published = client.post(f'/api/projects/{pid}/publish', headers={'x-forwarded-user': 'publisher'})
+    assert published.status_code == 201
+    assert published.json()['name'].startswith('v1-') and published.json()['name'].endswith('-ready')
+    version_id = published.json()['id']
+    assert client.get(f'/api/projects/{pid}/versions').json()[0]['author'] == 'publisher'
+    before = client.get(f'/api/projects/{pid}/versions/{version_id}').json()
+    assert before['sample_count'] == 2 and before['snapshot']['images'][0]['boxes']
+    assert client.get(f"/api/projects/{pid}/versions/{version_id}/images/{first['id']}/file").status_code == 200
+    assert save(client, pid, first, boxes=[]).status_code == 200
+    after = client.get(f'/api/projects/{pid}/versions/{version_id}').json()
+    assert after['snapshot'] == before['snapshot']
+    approved = client.put(f'/api/projects/{pid}/review/bulk', headers={'x-forwarded-user': 'reviewer'},
+                          json={'image_ids': [first['id'], second['id']], 'status': 'approved'})
+    assert approved.status_code == 200 and approved.json()['updated'] == 2
+    rows = client.get(f'/api/projects/{pid}/images').json()
+    assert all(item['review_status'] == 'approved' for item in rows)
+    assert all('annotation_count' in item and 'category_ids' in item for item in rows)
+    assert client.post(f'/api/projects/{pid}/publish').json()['name'].startswith('v2-')
+
+
 def test_ai_classification_rejected_and_no_credentials(client, monkeypatch, tmp_path):
     monkeypatch.setenv('GPT_ENV_FILE', str(tmp_path / 'missing.env'))
     result = client.post('/api/ai/validate')

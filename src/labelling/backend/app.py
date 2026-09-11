@@ -78,6 +78,12 @@ def init_db():
             id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id),
             author TEXT NOT NULL, body TEXT NOT NULL,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE IF NOT EXISTS dataset_versions (
+            id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id),
+            version_number INTEGER NOT NULL, name TEXT NOT NULL, author TEXT NOT NULL,
+            sample_count INTEGER NOT NULL, snapshot TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(project_id,version_number));
         ''')
         # Additive migrations preserve annotations from existing deployments.
         if 'annotation_type' not in {r['name'] for r in db.execute('PRAGMA table_info(projects)')}:
@@ -122,6 +128,7 @@ def init_db():
         db.execute('CREATE INDEX IF NOT EXISTS idx_revisions_image ON annotation_revisions(image_id,revision)')
         db.execute('CREATE INDEX IF NOT EXISTS idx_batches_project ON import_batches(project_id)')
         db.execute('CREATE INDEX IF NOT EXISTS idx_comments_project ON project_comments(project_id,created_at)')
+        db.execute('CREATE INDEX IF NOT EXISTS idx_versions_project ON dataset_versions(project_id,version_number)')
         # Existing deployments become version 1 without altering any image data.
         for project in db.execute('SELECT id,created_at FROM projects').fetchall():
             batch = db.execute('SELECT id FROM import_batches WHERE project_id=? ORDER BY rowid LIMIT 1',
@@ -190,6 +197,26 @@ class CommentCreate(BaseModel):
 class ReviewDecision(BaseModel):
     status: Literal['ready_for_review', 'approved', 'rejected']
     comment: str = Field(default='', max_length=2000)
+
+
+class BulkReview(BaseModel):
+    image_ids: list[str] = Field(min_length=1, max_length=1000)
+    status: Literal['approved'] = 'approved'
+
+
+class ClassCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    color: str = Field(pattern=r'^#[0-9A-Fa-f]{6}$')
+
+
+class ClassUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    color: str = Field(pattern=r'^#[0-9A-Fa-f]{6}$')
+    archived: bool = False
+
+
+class ClassMerge(BaseModel):
+    target_category_id: int = Field(ge=1)
 
 
 def perceptual_hash(image):
@@ -357,6 +384,129 @@ def update_project(project_id: str, payload: ProjectUpdate):
         return get_project(db, project_id)
 
 
+def validate_class_name(classes, name, exclude_id=None):
+    value = name.strip()
+    if not value or any(item['id'] != exclude_id and item['name'].casefold() == value.casefold()
+                        for item in classes):
+        raise HTTPException(422, 'Class names must be non-empty and unique')
+    return value
+
+
+@app.post('/api/projects/{project_id}/classes', status_code=201)
+def add_class(project_id: str, payload: ClassCreate):
+    with database() as db:
+        project = get_project(db, project_id)
+        name = validate_class_name(project['classes'], payload.name)
+        category_id = max((item['id'] for item in project['classes']), default=0) + 1
+        classes = project['classes'] + [{'id': category_id, 'name': name,
+                                         'color': payload.color.lower(), 'archived': False}]
+        db.execute('UPDATE projects SET classes=? WHERE id=?', (json.dumps(classes), project_id))
+        return get_project(db, project_id)
+
+
+@app.put('/api/projects/{project_id}/classes/{category_id}')
+def update_class(project_id: str, category_id: int, payload: ClassUpdate):
+    with database() as db:
+        project = get_project(db, project_id)
+        category = next((item for item in project['classes'] if item['id'] == category_id), None)
+        if category is None:
+            raise HTTPException(404, 'Class not found')
+        name = validate_class_name(project['classes'], payload.name, category_id)
+        if payload.archived and sum(not item.get('archived', False) and item['id'] != category_id
+                                    for item in project['classes']) == 0:
+            raise HTTPException(422, 'A project must retain at least one active class')
+        category.update(name=name, color=payload.color.lower(), archived=payload.archived)
+        db.execute('UPDATE projects SET classes=? WHERE id=?', (json.dumps(project['classes']), project_id))
+        return get_project(db, project_id)
+
+
+@app.post('/api/projects/{project_id}/classes/{category_id}/merge')
+def merge_class(project_id: str, category_id: int, payload: ClassMerge):
+    if category_id == payload.target_category_id:
+        raise HTTPException(422, 'Choose a different destination class')
+    with database() as db:
+        project = get_project(db, project_id)
+        ids = {item['id'] for item in project['classes']}
+        if category_id not in ids or payload.target_category_id not in ids:
+            raise HTTPException(404, 'Class not found')
+        for table, key in (('images', 'id'), ('annotation_revisions', 'id')):
+            rows = db.execute(f'''SELECT {key},boxes,labels FROM {table} WHERE ''' +
+                              ('project_id=?' if table == 'images' else
+                               'image_id IN (SELECT id FROM images WHERE project_id=?)'), (project_id,)).fetchall()
+            for row in rows:
+                boxes = json.loads(row['boxes'])
+                for box in boxes:
+                    if box['category_id'] == category_id:
+                        box['category_id'] = payload.target_category_id
+                labels = list(dict.fromkeys(payload.target_category_id if item == category_id else item
+                                            for item in json.loads(row['labels'])))
+                db.execute(f'UPDATE {table} SET boxes=?,labels=? WHERE {key}=?',
+                           (json.dumps(boxes), json.dumps(labels), row[key]))
+        classes = [item for item in project['classes'] if item['id'] != category_id]
+        db.execute('UPDATE projects SET classes=? WHERE id=?', (json.dumps(classes), project_id))
+        return get_project(db, project_id)
+
+
+@app.post('/api/projects/{project_id}/publish', status_code=201)
+def publish_version(project_id: str, request: Request):
+    version_id = uuid.uuid4().hex
+    directory = DATA / 'versions' / project_id / version_id
+    with database() as db:
+        project = get_project(db, project_id)
+        rows = db.execute('SELECT * FROM images WHERE project_id=? ORDER BY source_path,id', (project_id,)).fetchall()
+        number = db.execute('SELECT COALESCE(MAX(version_number),0)+1 FROM dataset_versions WHERE project_id=?',
+                            (project_id,)).fetchone()[0]
+        name = f'v{number}-{datetime.now(timezone.utc).strftime("%y%m%d")}-ready'
+        author = (request.headers.get('x-forwarded-preferred-username') or
+                  request.headers.get('x-forwarded-user') or 'admin').strip()[:150] or 'admin'
+        snapshot = {'project': {key: project[key] for key in ('name', 'annotation_type', 'classes', 'description',
+                    'labelling_instructions', 'ai_instructions', 'export_train_percent')},
+                    'images': [image_json(row) | {'stored_name': row['stored_name']} for row in rows]}
+        try:
+            directory.mkdir(parents=True)
+            for row in rows:
+                shutil.copy2(DATA / 'images' / project_id / row['stored_name'], directory / row['stored_name'])
+            db.execute('''INSERT INTO dataset_versions
+                (id,project_id,version_number,name,author,sample_count,snapshot) VALUES (?,?,?,?,?,?,?)''',
+                (version_id, project_id, number, name, author, len(rows), json.dumps(snapshot)))
+        except Exception:
+            shutil.rmtree(directory, ignore_errors=True)
+            raise
+        return {'id': version_id, 'version_number': number, 'name': name, 'author': author,
+                'sample_count': len(rows), 'created_at': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')}
+
+
+@app.get('/api/projects/{project_id}/versions')
+def versions(project_id: str):
+    with database() as db:
+        get_project(db, project_id)
+        return [dict(row) for row in db.execute('''SELECT id,version_number,name,author,sample_count,created_at
+            FROM dataset_versions WHERE project_id=? ORDER BY version_number DESC''', (project_id,))]
+
+
+@app.get('/api/projects/{project_id}/versions/{version_id}')
+def version_detail(project_id: str, version_id: str):
+    with database() as db:
+        row = db.execute('SELECT * FROM dataset_versions WHERE id=? AND project_id=?',
+                         (version_id, project_id)).fetchone()
+        if row is None:
+            raise HTTPException(404, 'Published version not found')
+        return {key: row[key] for key in ('id', 'version_number', 'name', 'author', 'sample_count', 'created_at')} | {
+            'snapshot': json.loads(row['snapshot'])}
+
+
+@app.get('/api/projects/{project_id}/versions/{version_id}/images/{image_id}/file')
+def version_image_file(project_id: str, version_id: str, image_id: str):
+    detail = version_detail(project_id, version_id)
+    image = next((item for item in detail['snapshot']['images'] if item['id'] == image_id), None)
+    if image is None:
+        raise HTTPException(404, 'Version image not found')
+    path = DATA / 'versions' / project_id / version_id / image['stored_name']
+    if not path.is_file():
+        raise HTTPException(404, 'Version image file is unavailable')
+    return FileResponse(path, media_type='image/png')
+
+
 @app.post('/api/projects/{project_id}/merge')
 def merge_project(project_id: str, payload: ProjectMerge):
     source_id = payload.source_project_id
@@ -430,6 +580,7 @@ def merge_project(project_id: str, payload: ProjectMerge):
                     db.execute('UPDATE annotation_revisions SET boxes=?,labels=? WHERE id=?',
                                (json.dumps(revision_boxes), json.dumps(revision_labels), revision['id']))
             db.execute('UPDATE project_comments SET project_id=? WHERE project_id=?', (project_id, source_id))
+            db.execute('DELETE FROM dataset_versions WHERE project_id=?', (source_id,))
             db.execute('DELETE FROM import_batches WHERE project_id=?', (source_id,))
             db.execute('UPDATE projects SET classes=? WHERE id=?', (json.dumps(root_classes), project_id))
             db.execute('DELETE FROM projects WHERE id=?', (source_id,))
@@ -441,6 +592,7 @@ def merge_project(project_id: str, payload: ProjectMerge):
             raise
     shutil.rmtree(DATA / 'images' / source_id, ignore_errors=True)
     shutil.rmtree(DATA / 'deleted' / source_id, ignore_errors=True)
+    shutil.rmtree(DATA / 'versions' / source_id, ignore_errors=True)
     with database() as db:
         return get_project(db, project_id) | {'images_merged': len(moved_files),
                                               'classes_added': len(root_classes) - len(root['classes'])}
@@ -453,11 +605,13 @@ def delete_project(project_id: str):
         db.execute('DELETE FROM annotation_revisions WHERE image_id IN (SELECT id FROM images WHERE project_id=?)',
                    (project_id,))
         db.execute('DELETE FROM project_comments WHERE project_id=?', (project_id,))
+        db.execute('DELETE FROM dataset_versions WHERE project_id=?', (project_id,))
         db.execute('DELETE FROM images WHERE project_id=?', (project_id,))
         db.execute('DELETE FROM import_batches WHERE project_id=?', (project_id,))
         db.execute('DELETE FROM projects WHERE id=?', (project_id,))
     shutil.rmtree(DATA / 'images' / project_id, ignore_errors=True)
     shutil.rmtree(DATA / 'deleted' / project_id, ignore_errors=True)
+    shutil.rmtree(DATA / 'versions' / project_id, ignore_errors=True)
     return {'deleted': project_id}
 
 
@@ -492,7 +646,11 @@ def images(project_id: str):
         rows = db.execute('SELECT * FROM images WHERE project_id=? ORDER BY source_path,id', (project_id,))
         return [{k: item[k] for k in ('id', 'source_path', 'width', 'height', 'batch_id',
                                       'review_status', 'review_comment', 'reviewed_by', 'reviewed_at')} |
-                {'completed': bool(item['completed'])} for item in rows]
+                {'completed': bool(item['completed']),
+                 'annotation_count': len(json.loads(item['boxes'])) + len(json.loads(item['labels'])),
+                 'category_ids': sorted(set(json.loads(item['labels'])) |
+                                        {box['category_id'] for box in json.loads(item['boxes'])})}
+                for item in rows]
 
 
 @app.post('/api/projects/{project_id}/batches', status_code=201)
@@ -541,7 +699,11 @@ def batch_images(project_id: str, batch_id: str):
                           (project_id, batch_id)).fetchall()
         return [{k: row[k] for k in ('id', 'source_path', 'width', 'height', 'batch_id',
                                      'review_status', 'review_comment', 'reviewed_by', 'reviewed_at')} |
-                {'completed': bool(row['completed'])} for row in rows]
+                {'completed': bool(row['completed']),
+                 'annotation_count': len(json.loads(row['boxes'])) + len(json.loads(row['labels'])),
+                 'category_ids': sorted(set(json.loads(row['labels'])) |
+                                        {box['category_id'] for box in json.loads(row['boxes'])})}
+                for row in rows]
 
 
 @app.post('/api/projects/{project_id}/images', status_code=201)
@@ -747,6 +909,28 @@ def review_annotation(project_id: str, image_id: str, payload: ReviewDecision, r
             WHERE id=? AND project_id=?''',
             (payload.status, comment, reviewer, reviewed_at, image_id, project_id))
         return image_json(get_image(db, project_id, image_id))
+
+
+@app.put('/api/projects/{project_id}/review/bulk')
+def bulk_review(project_id: str, payload: BulkReview, request: Request):
+    image_ids = list(dict.fromkeys(payload.image_ids))
+    reviewer = (request.headers.get('x-forwarded-preferred-username') or
+                request.headers.get('x-forwarded-user') or 'admin').strip()[:150] or 'admin'
+    with database() as db:
+        get_project(db, project_id)
+        placeholders = ','.join('?' for _ in image_ids)
+        rows = db.execute(f'SELECT id,completed FROM images WHERE project_id=? AND id IN ({placeholders})',
+                          (project_id, *image_ids)).fetchall()
+        if len(rows) != len(image_ids):
+            raise HTTPException(404, 'One or more selected images no longer exist')
+        if any(not row['completed'] for row in rows):
+            raise HTTPException(422, 'Only completed annotations can be approved')
+        reviewed_at = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+        db.execute(f'''UPDATE images SET review_status='approved',review_comment='',reviewed_by=?,reviewed_at=?
+            WHERE project_id=? AND id IN ({placeholders})''',
+                   (reviewer, reviewed_at, project_id, *image_ids))
+        return {'updated': len(image_ids), 'image_ids': image_ids, 'reviewed_by': reviewer,
+                'reviewed_at': reviewed_at}
 
 
 @app.get('/api/projects/{project_id}/images/{image_id}/revisions')
@@ -1138,7 +1322,8 @@ def suggest_annotations(project_id: str, image_id: str, payload: AISuggestReques
             if row['revision'] or row['completed'] or json.loads(row['boxes']):
                 raise HTTPException(409, 'AI assistance only runs on unannotated images')
             image_path = DATA / 'images' / project_id / row['stored_name']
-        boxes = ai_labelling.detect(image_path, project['classes'], row['width'], row['height'],
+        active_classes = [item for item in project['classes'] if not item.get('archived', False)]
+        boxes = ai_labelling.detect(image_path, active_classes, row['width'], row['height'],
                                     project['ai_instructions'])
         # The ordinary save path validates classes, bounds, and the revision again.
         return save_annotations(project_id, image_id, AnnotationSave(
