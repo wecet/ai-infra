@@ -214,7 +214,7 @@ function App() {
             <div className="project-grid">
               {projects.map((p) => (
                 <button
-                  className={`project-card ${draggedProject?.id === p.id ? "dragging" : ""} ${mergeTarget?.id === p.id ? "absorbing" : ""}`}
+                  className={`project-card project-card-${p.annotation_type === "image_classification" ? "classification" : "detection"} ${draggedProject?.id === p.id ? "dragging" : ""} ${mergeTarget?.id === p.id ? "absorbing" : ""}`}
                   key={p.id}
                   draggable
                   onDragStart={(e) => {
@@ -230,12 +230,17 @@ function App() {
                   onClick={() => { if (!dragged.current) open(p.id); }}
                 >
                   <div className="card-top">
-                    <span className="folder-icon">▱</span>
+                    <span className="project-type-icon" aria-hidden="true">
+                      {p.annotation_type === "image_classification" ? "▦" : "⌗"}
+                    </span>
                     <span className="tag">
                       {p.total && p.completed === p.total
                         ? "COMPLETE"
                         : "IN PROGRESS"}
                     </span>
+                  </div>
+                  <div className="project-type-label">
+                    {p.annotation_type === "image_classification" ? "IMAGE CLASSIFICATION" : "OBJECT DETECTION"}
                   </div>
                   <h2>{p.name}</h2>
                   <p>
