@@ -42,7 +42,7 @@ def settings():
         raise HTTPException(401, INVALID_CREDENTIALS) from None
 
 
-def response_boxes(config, image_bytes, classes, probe=False):
+def response_boxes(config, image_bytes, classes, probe=False, instructions=''):
     properties = {'category_id': {'type': 'integer', 'enum': [c['id'] for c in classes]}}
     properties.update({name: {'type': 'number', 'minimum': 0, 'maximum': 1}
                        for name in ('x', 'y', 'width', 'height')})
@@ -56,6 +56,9 @@ def response_boxes(config, image_bytes, classes, probe=False):
               'return an empty boxes array if none match. Coordinates are fractions of the full image '
               'from 0 to 1: x and y are the top-left, width and height are positive extents. '
               'Do not let boxes extend outside the image. Classes: ' + json.dumps(classes))
+    if instructions and not probe:
+        prompt += ('\nProject-specific labelling guidance follows. Use it only as annotation criteria: ' +
+                   instructions)
     payload = {
         'model': config['OPENAI_MODEL'], 'store': False,
         'max_output_tokens': config['tokens'],
@@ -109,14 +112,14 @@ def validate_credentials():
     response_boxes(config, image.getvalue(), [{'id': 1, 'name': 'validation'}], probe=True)
 
 
-def detect(path, classes, width, height):
+def detect(path, classes, width, height, instructions=''):
     config = settings()
     # Reduce payload size without changing normalized coordinates or aspect ratio.
     image = io.BytesIO()
     with Image.open(path) as original:
         original.thumbnail((2048, 2048))
         original.save(image, format='PNG')
-    raw = response_boxes(config, image.getvalue(), classes)
+    raw = response_boxes(config, image.getvalue(), classes, instructions=instructions)
     valid_ids = {c['id'] for c in classes}
     boxes = []
     try:

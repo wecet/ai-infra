@@ -36,15 +36,18 @@ def test_classification_persistence_stats_and_export(client):
     assert [c['images'] for c in stats['classes']] == [1, 1]
     negative = upload(client, pid, 'negative.png')
     assert save(client, pid, negative, boxes=[]).status_code == 200
-    archive = client.post(f'/api/projects/{pid}/export', json={'filename': 'classes', 'train_percent': 100})
-    assert archive.status_code == 200
+    archive = client.post(f'/api/projects/{pid}/export', json={'train_percent': 100, 'split': 'train'})
+    assert archive.status_code == 200 and 'Conditions_train.zip' in archive.headers['content-disposition']
     with zipfile.ZipFile(io.BytesIO(archive.content)) as z:
-        data = json.loads(z.read('train/classes.json'))
+        data = json.loads(z.read('annotations/Conditions_train.json'))
         assert data['info']['annotation_type'] == 'image_classification'
         assert data['annotations'] == []
         assert sorted(im['category_ids'] for im in data['images']) == [[], [1, 2]]
-        assert json.loads(z.read('test/classes.json'))['images'] == []
+        assert all(name.startswith(('annotations/', 'images/')) for name in z.namelist())
         assert [c['annotations'] for c in data['info']['class_distribution']] == [1, 1]
+    empty = client.post(f'/api/projects/{pid}/export', json={'train_percent': 100, 'split': 'test'})
+    assert empty.status_code == 422
+    assert 'test split is empty' in empty.json()['detail']
 
 
 def test_old_database_migration(tmp_path, monkeypatch):
@@ -64,6 +67,7 @@ def test_old_database_migration(tmp_path, monkeypatch):
         image = service.image_json(service.get_image(db, 'old', 'image'))
         assert image['revision'] == 7 and image['completed']
         assert image['boxes'][0]['width'] == 10 and image['labels'] == []
+        assert image['review_status'] == 'ready_for_review'
 
 
 def test_ai_saves_draft_once_and_preserves_edits(client, monkeypatch):
@@ -91,6 +95,36 @@ def test_ai_saves_draft_once_and_preserves_edits(client, monkeypatch):
     assert client.post(f"/api/projects/{pid}/images/{second['id']}/ai", json={'revision': 0}).status_code == 409
     current = client.get(f"/api/projects/{pid}/images/{second['id']}").json()
     assert current['completed'] and len(current['boxes']) == 1
+
+
+def test_project_settings_review_workflow_and_quality(client):
+    pid = project(client)
+    settings = client.put(f'/api/projects/{pid}', json={
+        'name': 'Updated', 'description': 'Inspect components',
+        'labelling_instructions': 'Use tight boxes', 'ai_instructions': 'Ignore reflections',
+        'export_train_percent': 50})
+    assert settings.status_code == 200
+    assert settings.json()['description'] == 'Inspect components'
+    assert settings.json()['export_train_percent'] == 50
+    image = upload(client, pid)
+    completed = save(client, pid, image, boxes=[]).json()
+    assert completed['review_status'] == 'ready_for_review'
+    rejected = client.put(f"/api/projects/{pid}/images/{image['id']}/review",
+                          json={'status': 'rejected', 'comment': ''})
+    assert rejected.status_code == 422
+    rejected = client.put(f"/api/projects/{pid}/images/{image['id']}/review",
+                          headers={'x-forwarded-user': 'reviewer'},
+                          json={'status': 'rejected', 'comment': 'Missing the component'})
+    assert rejected.status_code == 200
+    assert rejected.json()['reviewed_by'] == 'reviewer'
+    approved = client.put(f"/api/projects/{pid}/images/{image['id']}/review",
+                          json={'status': 'approved'}).json()
+    assert approved['review_status'] == 'approved'
+    edited = save(client, pid, completed, boxes=[]).json()
+    assert edited['review_status'] == 'ready_for_review' and not edited['review_comment']
+    quality = client.get(f'/api/projects/{pid}/quality').json()
+    assert {issue['code'] for issue in quality['issues']} >= {'missing_labels', 'empty_classes'}
+    assert quality['checks_run'] == 7
 
 
 def test_ai_classification_rejected_and_no_credentials(client, monkeypatch, tmp_path):
@@ -212,58 +246,69 @@ def test_kpis_and_coco_split(client):
     assert (stats['total'], stats['completed'], stats['remaining'], stats['boxes']) == (6, 5, 1, 4)
     assert stats['classes'][0] == {'id': 1, 'name': 'Bolt', 'boxes': 4, 'images': 4}
     assert stats['classes'][1]['boxes'] == 0
-    response = client.post(f'/api/projects/{pid}/export', json={
-        'filename': 'my-dataset', 'train_percent': 80, 'description': 'Fastener inspection dataset'})
-    assert response.status_code == 200
-    assert 'my-dataset.zip' in response.headers['content-disposition']
-    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
-        train = json.loads(archive.read('train/my-dataset.json'))
-        test = json.loads(archive.read('test/my-dataset.json'))
-        for split, coco, expected_images in [('train', train, 4), ('test', test, 1)]:
-            assert coco['info']['description'] == 'Fastener inspection dataset'
-            assert coco['info']['project_name'] == 'Inspection'
-            assert coco['info']['split'] == split
-            assert coco['info']['images_annotated'] == expected_images
-            assert coco['info']['total_images_annotated'] == 5
-            assert datetime.fromisoformat(coco['info']['date_created'].replace('Z', '+00:00')).tzinfo
-            assert [item['name'] for item in coco['info']['class_distribution']] == ['Bolt', 'Panel']
-        assert train['info']['date_created'] == test['info']['date_created']
-        combined = {
-            name: sum(next(item['annotations'] for item in coco['info']['class_distribution'] if item['name'] == name)
-                      for coco in (train, test))
-            for name in ('Bolt', 'Panel')
-        }
-        assert combined == {'Bolt': 4, 'Panel': 0}
-        assert (len(train['images']), len(test['images'])) == (4, 1)
-        train_names = {i['file_name'] for i in train['images']}
-        test_names = {i['file_name'] for i in test['images']}
-        assert train_names.isdisjoint(test_names)
-        assert len(train['annotations']) + len(test['annotations']) == 4
-        for split, coco in [('train', train), ('test', test)]:
-            assert coco['categories'][1]['id'] == 2
-            image_ids = {i['id'] for i in coco['images']}
-            for image in coco['images']:
-                assert f"{split}/{image['file_name']}" in archive.namelist()
-            for annotation in coco['annotations']:
-                assert annotation['image_id'] in image_ids
-                assert annotation['bbox'] == [10, 5, 30, 20]
-                assert annotation['area'] == 600
-    repeat = client.post(f'/api/projects/{pid}/export', json={
-        'filename': 'my-dataset', 'train_percent': 80, 'description': 'Fastener inspection dataset'})
-    with zipfile.ZipFile(io.BytesIO(repeat.content)) as archive:
-        repeated = json.loads(archive.read('train/my-dataset.json'))
-        assert repeated | {'info': repeated['info'] | {'date_created': train['info']['date_created']}} == train
-    for percentage, expected in [(0, 0), (100, 5)]:
-        response = client.post(f'/api/projects/{pid}/export', json={'filename': 'edge', 'train_percent': percentage})
+    exported = {}
+    for split in ('train', 'test'):
+        response = client.post(f'/api/projects/{pid}/export', json={
+            'train_percent': 80, 'description': 'Fastener inspection dataset', 'split': split})
+        assert response.status_code == 200
+        assert f'Inspection_{split}.zip' in response.headers['content-disposition']
+        archive = zipfile.ZipFile(io.BytesIO(response.content))
+        coco = json.loads(archive.read(f'annotations/Inspection_{split}.json'))
+        exported[split] = (coco, archive.namelist(), response.content)
+        expected_images = 4 if split == 'train' else 1
+        assert set(archive.namelist()) >= {'annotations/', 'images/', f'annotations/Inspection_{split}.json'}
+        assert all(name.startswith(('annotations/', 'images/')) for name in archive.namelist())
+        for image in coco['images']:
+            assert image['file_name'] in archive.namelist()
+        assert coco['info']['description'] == 'Fastener inspection dataset'
+        assert coco['info']['project_name'] == 'Inspection'
+        assert coco['info']['split'] == split
+        assert coco['info']['images_annotated'] == expected_images
+        assert coco['info']['total_images_annotated'] == 5
+        assert datetime.fromisoformat(coco['info']['date_created'].replace('Z', '+00:00')).tzinfo
+        assert [item['name'] for item in coco['info']['class_distribution']] == ['Bolt', 'Panel']
+    train, test = exported['train'][0], exported['test'][0]
+    round_trip = client.post('/api/projects/import',
+                             data={'name': 'Imported Train'},
+                             files={'file': ('Inspection_train.zip', exported['train'][2], 'application/zip')})
+    assert round_trip.status_code == 201, round_trip.text
+    assert round_trip.json()['images_imported'] == 4 and round_trip.json()['updated'] == 4
+    with zipfile.ZipFile(io.BytesIO(client.post(f'/api/projects/{pid}/export', json={
+            'train_percent': 80, 'description': 'Fastener inspection dataset', 'split': 'train'}).content)) as repeated_archive:
+        repeated = json.loads(repeated_archive.read('annotations/Inspection_train.json'))
+    assert repeated | {'info': repeated['info'] | {'date_created': train['info']['date_created']}} == train
+    combined = {
+        name: sum(next(item['annotations'] for item in coco['info']['class_distribution'] if item['name'] == name)
+                  for coco in (train, test))
+        for name in ('Bolt', 'Panel')
+    }
+    assert combined == {'Bolt': 4, 'Panel': 0}
+    assert (len(train['images']), len(test['images'])) == (4, 1)
+    train_names = {i['file_name'] for i in train['images']}
+    test_names = {i['file_name'] for i in test['images']}
+    assert train_names.isdisjoint(test_names)
+    assert len(train['annotations']) + len(test['annotations']) == 4
+    for split, coco in [('train', train), ('test', test)]:
+        assert coco['categories'][1]['id'] == 2
+        image_ids = {i['id'] for i in coco['images']}
+        for annotation in coco['annotations']:
+            assert annotation['image_id'] in image_ids
+            assert annotation['bbox'] == [10, 5, 30, 20]
+            assert annotation['area'] == 600
+    for percentage, split, expected in [(0, 'test', 5), (100, 'train', 5)]:
+        response = client.post(f'/api/projects/{pid}/export', json={'train_percent': percentage, 'split': split})
         with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
-            assert len(json.loads(archive.read('train/edge.json'))['images']) == expected
+            assert len(json.loads(archive.read(f'annotations/Inspection_{split}.json'))['images']) == expected
+    assert client.post(f'/api/projects/{pid}/export', json={'train_percent': 0, 'split': 'train'}).status_code == 422
+    assert client.post(f'/api/projects/{pid}/export', json={'train_percent': 100, 'split': 'test'}).status_code == 422
 
 
-def test_export_requires_completed_images_and_safe_filename(client):
+def test_export_requires_completed_images_and_valid_split(client):
     pid = project(client)
     upload(client, pid)
-    for filename, percent in [('empty', 80), ('../unsafe', 80), ('okay', 101)]:
-        assert client.post(f'/api/projects/{pid}/export', json={'filename': filename, 'train_percent': percent}).status_code == 422
+    for payload in ({'train_percent': 80, 'split': 'train'}, {'train_percent': 101, 'split': 'train'},
+                    {'train_percent': 80, 'split': 'validation'}):
+        assert client.post(f'/api/projects/{pid}/export', json=payload).status_code == 422
 
 
 def test_upload_size_and_same_name_conflict(client, monkeypatch):
@@ -274,3 +319,167 @@ def test_upload_size_and_same_name_conflict(client, monkeypatch):
     assert client.post(f'/api/projects/{pid}/images', files={'file': ('folder/a.png', raw.getvalue())}).status_code == 409
     monkeypatch.setattr(service, 'MAX_UPLOAD', 4)
     assert client.post(f'/api/projects/{pid}/images', files={'file': ('big.png', b'12345')}).status_code == 413
+
+
+def test_dataset_history_batches_and_revision_history(client):
+    pid = project(client)
+    first = upload(client, pid, 'initial/a.png')
+    batch = client.post(f'/api/projects/{pid}/batches', json={'kind': 'new_additions'})
+    assert batch.status_code == 201
+    second_data = io.BytesIO()
+    Image.new('RGB', (40, 30), '#123456').save(second_data, 'PNG')
+    second = client.post(f"/api/projects/{pid}/images?batch_id={batch.json()['id']}",
+                         files={'file': ('later/b.png', second_data.getvalue(), 'image/png')})
+    assert second.status_code == 201
+    history = client.get(f'/api/projects/{pid}/history').json()
+    assert [(row['version'], row['kind'], row['samples'], row['total_samples']) for row in history] == [
+        (1, 'project_created', 1, 1), (2, 'new_additions', 1, 2)]
+    batch_images = client.get(f"/api/projects/{pid}/batches/{batch.json()['id']}/images").json()
+    assert [item['source_path'] for item in batch_images] == ['later/b.png']
+    assert save(client, pid, first).status_code == 200
+    saved = client.get(f"/api/projects/{pid}/images/{first['id']}").json()
+    assert save(client, pid, saved, boxes=[]).status_code == 200
+    revisions = client.get(f"/api/projects/{pid}/images/{first['id']}/revisions").json()
+    assert [row['revision'] for row in revisions] == [2, 1, 0]
+    assert revisions[1]['boxes'][0]['category_id'] == 1
+    stored = service.DATA / 'images' / pid / f"{first['id']}.png"
+    assert stored.is_file()
+    deleted = client.delete(f"/api/projects/{pid}/images/{first['id']}")
+    assert deleted.status_code == 200 and deleted.json() == {'deleted': first['id']}
+    assert not stored.exists()
+    assert client.get(f"/api/projects/{pid}/images/{first['id']}").status_code == 404
+    service.init_db()
+    history = client.get(f'/api/projects/{pid}/history').json()
+    assert [(row['kind'], row['sample_delta'], row['total_samples']) for row in history] == [
+        ('project_created', 1, 1), ('new_additions', 1, 2), ('images_deleted', -1, 1)]
+    deletion = history[-1]
+    detail = deletion['details'][0]
+    assert {key: detail[key] for key in ('id', 'source_path', 'width', 'height', 'completed', 'restorable')} == {
+        'id': first['id'], 'source_path': 'initial/a.png', 'width': 100, 'height': 80,
+        'completed': True, 'restorable': True}
+    assert client.get(f"/api/projects/{pid}/history/{deletion['id']}/deleted/{first['id']}/file").status_code == 200
+    with service.database() as db:
+        assert db.execute('SELECT COUNT(*) FROM annotation_revisions WHERE image_id=?',
+                          (first['id'],)).fetchone()[0] == 0
+    restored = client.post(f"/api/projects/{pid}/history/{deletion['id']}/deleted/{first['id']}/restore")
+    assert restored.status_code == 200
+    assert restored.json()['revision'] == 2 and restored.json()['boxes'] == []
+    assert stored.is_file()
+    assert [item['revision'] for item in client.get(
+        f"/api/projects/{pid}/images/{first['id']}/revisions").json()] == [2, 1, 0]
+    history = client.get(f'/api/projects/{pid}/history').json()
+    assert history[-1]['kind'] == 'images_restored' and history[-1]['total_samples'] == 2
+    assert history[-2]['details'][0]['restorable'] is False
+    assert client.post(f"/api/projects/{pid}/history/{deletion['id']}/deleted/{first['id']}/restore").status_code == 409
+
+
+def test_coco_and_yolo_annotation_import(client):
+    pid = project(client)
+    coco_image = upload(client, pid, 'nested/coco.png')
+    document = {'images': [{'id': 7, 'file_name': 'images/coco.png'}],
+                'categories': [{'id': 9, 'name': 'Bolt'}],
+                'annotations': [{'id': 1, 'image_id': 7, 'category_id': 9, 'bbox': [1, 2, 20, 30]}]}
+    response = client.post(f'/api/projects/{pid}/annotations/import',
+                           files={'file': ('annotations.json', json.dumps(document), 'application/json')})
+    assert response.status_code == 200 and response.json()['updated'] == 1
+    assert client.get(f"/api/projects/{pid}/images/{coco_image['id']}").json()['boxes'][0] == {
+        'category_id': 1, 'x': 1.0, 'y': 2.0, 'width': 20.0, 'height': 30.0}
+
+    yolo_image = upload(client, pid, 'nested/yolo.png')
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, 'w') as zipped:
+        zipped.writestr('labels/yolo.txt', '1 0.5 0.5 0.2 0.25\n')
+    response = client.post(f'/api/projects/{pid}/annotations/import',
+                           files={'file': ('labels.zip', archive.getvalue(), 'application/zip')})
+    assert response.status_code == 200
+    box = client.get(f"/api/projects/{pid}/images/{yolo_image['id']}").json()['boxes'][0]
+    assert box == {'category_id': 2, 'x': 40.0, 'y': 30.0, 'width': 20.0, 'height': 20.0}
+
+    imported_pid = project(client, 'Imported dataset')
+    raw_image = io.BytesIO(); Image.new('RGB', (50, 40), '#abcdef').save(raw_image, 'JPEG')
+    zipped_dataset = io.BytesIO()
+    imported_coco = {'images': [{'id': 1, 'file_name': 'images/new.jpg'}],
+                     'categories': [{'id': 1, 'name': 'Panel'}],
+                     'annotations': [{'image_id': 1, 'category_id': 1, 'bbox': [5, 5, 10, 10]}]}
+    with zipfile.ZipFile(zipped_dataset, 'w') as zipped:
+        zipped.writestr('train/images/new.jpg', raw_image.getvalue())
+        zipped.writestr('train/annotations.json', json.dumps(imported_coco))
+    response = client.post(f'/api/projects/{imported_pid}/annotations/import',
+                           files={'file': ('coco.zip', zipped_dataset.getvalue(), 'application/zip')})
+    assert response.status_code == 200, response.text
+    assert response.json() == {'updated': 1, 'images_imported': 1, 'unmatched': []}
+    imported = client.get(f'/api/projects/{imported_pid}/images').json()
+    assert len(imported) == 1 and imported[0]['completed'] is True
+
+
+def test_similar_image_groups_are_reported_in_stats(client):
+    pid = project(client)
+    upload(client, pid, 'first.png', (100, 80))
+    upload(client, pid, 'second.png', (120, 90))
+    duplicate_data = client.get(f'/api/projects/{pid}/duplicates').json()
+    assert duplicate_data['similar_images'] == 2
+    assert len(duplicate_data['groups']) == 1
+    assert {item['source_path'] for item in duplicate_data['groups'][0]['images']} == {'first.png', 'second.png'}
+    stats = client.get(f'/api/projects/{pid}/stats').json()
+    assert stats['similar_images'] == 2 and stats['similar_groups'] == 1
+
+
+def test_import_project_zip_creates_repository_project_and_rolls_back_errors(client):
+    image_data = io.BytesIO()
+    Image.new('RGB', (60, 40), '#457890').save(image_data, 'PNG')
+    document = {
+        'info': {'project_name': 'Imported Inspection', 'annotation_type': 'object_detection'},
+        'images': [{'id': 1, 'file_name': 'images/sample.png', 'width': 60, 'height': 40}],
+        'categories': [{'id': 5, 'name': 'Bolt'}, {'id': 8, 'name': 'Panel'}],
+        'annotations': [{'id': 1, 'image_id': 1, 'category_id': 5, 'bbox': [4, 5, 20, 10]}],
+    }
+    project_zip = io.BytesIO()
+    with zipfile.ZipFile(project_zip, 'w') as archive:
+        archive.writestr('annotations/instances.json', json.dumps(document))
+        archive.writestr('images/sample.png', image_data.getvalue())
+    response = client.post('/api/projects/import',
+                           data={'name': 'Chosen Repository Name'},
+                           files={'file': ('inspection.zip', project_zip.getvalue(), 'application/zip')})
+    assert response.status_code == 201, response.text
+    imported = response.json()
+    assert imported['project']['name'] == 'Chosen Repository Name'
+    assert [item['name'] for item in imported['project']['classes']] == ['Bolt', 'Panel']
+    assert imported['images_imported'] == 1 and imported['updated'] == 1
+    pid = imported['project']['id']
+    images = client.get(f'/api/projects/{pid}/images').json()
+    assert len(images) == 1 and images[0]['completed'] is True
+    detail = client.get(f"/api/projects/{pid}/images/{images[0]['id']}").json()
+    assert detail['boxes'][0]['category_id'] == 1
+
+    assert client.post('/api/projects/import', data={'name': 'Bad'},
+                       files={'file': ('bad.zip', b'not zip')}).status_code == 422
+    assert client.post('/api/projects/import', data={'name': '   '},
+                       files={'file': ('inspection.zip', project_zip.getvalue())}).status_code == 422
+    assert client.post('/api/projects/import', files={'file': ('inspection.zip', project_zip.getvalue())}).status_code == 422
+    bad_zip = io.BytesIO()
+    document['annotations'][0]['bbox'] = [55, 5, 20, 10]
+    with zipfile.ZipFile(bad_zip, 'w') as archive:
+        archive.writestr('annotations/instances.json', json.dumps(document))
+        archive.writestr('images/sample.png', image_data.getvalue())
+    before = len(client.get('/api/projects').json())
+    assert client.post('/api/projects/import', data={'name': 'Invalid'},
+                       files={'file': ('invalid.zip', bad_zip.getvalue())}).status_code == 422
+    assert len(client.get('/api/projects').json()) == before
+
+
+def test_project_comments_are_persistent_timestamped_and_use_forwarded_user(client):
+    pid = project(client)
+    assert client.get(f'/api/projects/{pid}/comments').json() == []
+    assert client.post(f'/api/projects/{pid}/comments', json={'body': '   '}).status_code == 422
+    first = client.post(f'/api/projects/{pid}/comments', json={'body': 'Initial upload complete.'},
+                        headers={'x-forwarded-preferred-username': 'owen'})
+    assert first.status_code == 201
+    assert first.json()['author'] == 'owen'
+    assert datetime.fromisoformat(first.json()['created_at'].replace('Z', '+00:00'))
+    second = client.post(f'/api/projects/{pid}/comments', json={'body': 'Review started.'})
+    assert second.status_code == 201 and second.json()['author'] == 'admin'
+    service.init_db()
+    comments = client.get(f'/api/projects/{pid}/comments').json()
+    assert [item['body'] for item in comments] == ['Review started.', 'Initial upload complete.']
+    assert client.delete(f'/api/projects/{pid}').status_code == 200
+    assert client.get(f'/api/projects/{pid}/comments').status_code == 404

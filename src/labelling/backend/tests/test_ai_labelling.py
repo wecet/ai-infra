@@ -80,6 +80,16 @@ def test_normalized_coordinates_scale_to_original(config, monkeypatch, tmp_path)
         {'category_id':1, 'x':300, 'y':400, 'width':900, 'height':800}]
 
 
+def test_project_instructions_are_sent_as_annotation_criteria(config, monkeypatch, tmp_path):
+    path = tmp_path / 'image.png'
+    Image.new('RGB', (100, 80)).save(path)
+    requests = mock_response(monkeypatch, 200, completed([]))
+    ai.detect(path, [{'id': 1, 'name': 'A'}], 100, 80, 'Label partially obscured objects')
+    prompt = json.loads(requests[0].content)['input'][0]['content'][0]['text']
+    assert 'Project-specific labelling guidance' in prompt
+    assert 'Label partially obscured objects' in prompt
+
+
 def test_refused_or_incomplete_output(config, monkeypatch):
     mock_response(monkeypatch, 200, {'status':'incomplete','output':[]})
     with pytest.raises(HTTPException) as caught:

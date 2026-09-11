@@ -9,6 +9,10 @@ function App() {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
   const [locked, setLocked] = useState(false);
+  const [importingProject, setImportingProject] = useState(false);
+  const [importProjectError, setImportProjectError] = useState("");
+  const [pendingImportFile, setPendingImportFile] = useState(null);
+  const [importProjectName, setImportProjectName] = useState("");
   async function refresh() {
     try {
       setProjects(await api("/projects"));
@@ -27,6 +31,31 @@ function App() {
     } catch (e) {
       setError(e.message);
     }
+  }
+  function chooseImportProject(e) {
+    const file = e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    setPendingImportFile(file);
+    setImportProjectName(file.name.replace(/\.zip$/i, ""));
+    setImportProjectError("");
+  }
+  async function importProject(e) {
+    e.preventDefault();
+    if (!pendingImportFile || !importProjectName.trim()) return;
+    setImportingProject(true); setError(""); setImportProjectError("");
+    const body = new FormData();
+    body.append("name", importProjectName.trim());
+    body.append("file", pendingImportFile);
+    try {
+      const result = await api("/projects/import", { method: "POST", body });
+      await refresh();
+      setProject(result.project);
+      setCreating(false);
+      setPendingImportFile(null);
+      setImportProjectName("");
+    } catch (e) { setImportProjectError(e.message); }
+    finally { setImportingProject(false); }
   }
   return (
     <div className="app-shell">
@@ -114,6 +143,7 @@ function App() {
             project={project}
             onLock={setLocked}
             onRefresh={refresh}
+            onUpdated={(next) => { setProject(next); refresh(); }}
             onDeleted={() => {
               setProject(null);
               setLocked(false);
@@ -130,9 +160,15 @@ function App() {
                   automatically.
                 </p>
               </div>
-              <button className="primary" onClick={() => setCreating(true)}>
-                ＋ New project
-              </button>
+              <div className="homepage-actions">
+                <label className={`button ${importingProject ? "disabled" : ""}`}>
+                  {importingProject ? "Importing project…" : "↑ Import Project"}
+                  <input type="file" accept=".zip" hidden disabled={importingProject} onChange={chooseImportProject} />
+                </label>
+                <button className="primary" disabled={importingProject} onClick={() => setCreating(true)}>
+                  ＋ New project
+                </button>
+              </div>
             </div>
             {creating && (
               <CreateProject
@@ -197,6 +233,50 @@ function App() {
           </div>
         )}
       </main>
+      {pendingImportFile && !importProjectError && (
+        <div className="modal-backdrop">
+          <form className="panel import-name-dialog" role="dialog" aria-modal="true"
+            aria-labelledby="import-name-title" onSubmit={importProject}>
+            <div className="eyebrow">IMPORT PROJECT</div>
+            <h2 id="import-name-title">Name this project</h2>
+            <p className="muted">Choose the name that will appear in the project repository.</p>
+            <label>Project name
+              <input autoFocus required maxLength="150" value={importProjectName}
+                disabled={importingProject} onChange={(e) => setImportProjectName(e.target.value)} />
+            </label>
+            <p className="muted small truncate" title={pendingImportFile.name}>ZIP: {pendingImportFile.name}</p>
+            <div className="actions">
+              <button type="button" disabled={importingProject} onClick={() => {
+                setPendingImportFile(null); setImportProjectName("");
+              }}>Cancel</button>
+              <button className="primary" disabled={importingProject || !importProjectName.trim()}>
+                {importingProject ? "Importing project…" : "Import project"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+      {importProjectError && (
+        <div className="modal-backdrop">
+          <div className="panel import-error-dialog" role="alertdialog" aria-modal="true"
+            aria-labelledby="import-error-title" aria-describedby="import-error-description">
+            <div className="eyebrow">PROJECT IMPORT FAILED</div>
+            <h2 id="import-error-title">Check the ZIP folder structure</h2>
+            <p id="import-error-description" className="alert">{importProjectError}</p>
+            <p>Your ZIP must contain these folders at its root:</p>
+            <pre className="zip-tree">{`project.zip
+├── annotations/
+│   └── annotations.json
+└── images/
+    ├── image-001.jpg
+    └── image-002.png`}</pre>
+            <p className="muted small">The annotation JSON must contain COCO-compatible <code>images</code>, <code>categories</code>, and <code>annotations</code> fields. Image paths in the JSON must match files in the <code>images/</code> folder.</p>
+            <div className="actions"><button className="primary" autoFocus
+              onClick={() => { setImportProjectError(""); setPendingImportFile(null); setImportProjectName(""); }}>
+              Close and try again</button></div>
+          </div>
+        </div>
+      )}
       <footer className="app-footer">OpenIIoT · Labelling Studio</footer>
     </div>
   );
@@ -307,7 +387,7 @@ function CreateProject({ onCancel, onCreated }) {
   );
 }
 
-function Project({ project, onLock, onRefresh, onDeleted }) {
+function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
   const [tab, setTab] = useState("annotate");
   const [images, setImages] = useState([]);
   const [index, setIndex] = useState(0);
@@ -319,6 +399,7 @@ function Project({ project, onLock, onRefresh, onDeleted }) {
   const [aiEnabled, setAiEnabled] = useState(false);
   const [aiValidating, setAiValidating] = useState(false);
   const [aiError, setAiError] = useState("");
+  const [reviewImages, setReviewImages] = useState(null);
   const classification = project.annotation_type === "image_classification";
   const aiAttempts = useRef(new Set());
   async function toggleAI(e) {
@@ -374,6 +455,16 @@ function Project({ project, onLock, onRefresh, onDeleted }) {
     lock(true);
     setError("");
     const failures = [];
+    let batchId = null;
+    if (images.length) {
+      try {
+        batchId = (await api(`/projects/${project.id}/batches`, {
+          method: "POST", body: JSON.stringify({ kind: "new_additions" }),
+        })).id;
+      } catch (e) {
+        setError(e.message); setUploading(false); lock(false); return;
+      }
+    }
     for (let i = 0; i < files.length; i++) {
       setProgress(`Importing ${i + 1} of ${files.length} · ${files[i].name}`);
       const body = new FormData();
@@ -383,7 +474,7 @@ function Project({ project, onLock, onRefresh, onDeleted }) {
         files[i].webkitRelativePath || files[i].name,
       );
       try {
-        await api(`/projects/${project.id}/images`, { method: "POST", body });
+        await api(`/projects/${project.id}/images${batchId ? `?batch_id=${batchId}` : ""}`, { method: "POST", body });
       } catch (e) {
         failures.push(`${files[i].name}: ${e.message}`);
       }
@@ -474,13 +565,25 @@ function Project({ project, onLock, onRefresh, onDeleted }) {
           className={tab === "stats" ? "selected" : ""}
           onClick={() => setTab("stats")}
         >
-          ▥ KPIs & export
+          ▥ Dashboard
+        </button>
+        <button disabled={locked} className={tab === "review" ? "selected" : ""}
+          onClick={() => { setReviewImages(null); setTab("review"); }}>
+          ◫ Review
+        </button>
+        <button disabled={locked} className={tab === "history" ? "selected" : ""}
+          onClick={() => setTab("history")}>
+          ◷ History
+        </button>
+        <button disabled={locked} className={tab === "settings" ? "selected" : ""}
+          onClick={() => setTab("settings")}>
+          ⚙ Settings
         </button>
         <span>
           {images.filter((i) => i.completed).length} / {images.length} complete
         </span>
       </div>
-      {!classification && (
+      {!classification && tab === "annotate" && (
         <div className="notice ai-controls">
           <label className="checkbox-label">
             <input type="checkbox" checked={aiEnabled} disabled={locked || aiValidating}
@@ -489,6 +592,9 @@ function Project({ project, onLock, onRefresh, onDeleted }) {
           </label>
           <span className="muted small">Sends unannotated images to OpenAI as you open them. Review suggested boxes before completing.</span>
         </div>
+      )}
+      {tab === "annotate" && project.labelling_instructions && (
+        <div className="notice"><strong>Labelling instructions:</strong> {project.labelling_instructions}</div>
       )}
       {aiError && (
         <div className="modal-backdrop">
@@ -512,6 +618,16 @@ function Project({ project, onLock, onRefresh, onDeleted }) {
       )}
       {tab === "stats" ? (
         <Stats project={project} />
+      ) : tab === "settings" ? (
+        <Settings project={project} onUpdated={onUpdated} />
+      ) : tab === "history" ? (
+        <History project={project} onRestored={() => refresh()}
+          onView={(list) => { setReviewImages(list); setTab("review"); }} />
+      ) : tab === "review" ? (
+        <Review project={project} images={reviewImages || images.filter((item) => item.completed)}
+          filtered={!!reviewImages} onClear={() => setReviewImages(null)}
+          onReviewed={(saved) => setImages((list) => list.map((item) => item.id === saved.id ? { ...item, ...saved } : item))}
+          onEdit={(id) => { const next = images.findIndex((item) => item.id === id); if (next >= 0) setIndex(next); setTab("annotate"); }} />
       ) : !loaded ? (
         <div className="empty">Loading images…</div>
       ) : !current ? (
@@ -542,15 +658,173 @@ function Project({ project, onLock, onRefresh, onDeleted }) {
           onSaved={(saved) => {
             setImages((list) =>
               list.map((i) =>
-                i.id === saved.id ? { ...i, completed: saved.completed } : i,
+                i.id === saved.id ? { ...i, completed: saved.completed, review_status: saved.review_status,
+                  review_comment: saved.review_comment, reviewed_by: saved.reviewed_by, reviewed_at: saved.reviewed_at } : i,
               ),
             );
+            onRefresh();
+          }}
+          onDeleted={(id) => {
+            setImages((list) => {
+              const next = list.filter((item) => item.id !== id);
+              setIndex((currentIndex) => Math.max(0, Math.min(currentIndex, next.length - 1)));
+              return next;
+            });
             onRefresh();
           }}
         />
       )}
     </div>
   );
+}
+
+function AnnotationPreview({ project, image }) {
+  const [data, setData] = useState(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    api(`/projects/${project.id}/images/${image.id}`, { signal: controller.signal })
+      .then(setData).catch(() => {});
+    return () => controller.abort();
+  }, [project.id, image.id]);
+  return (
+    <div className="preview-image">
+      <img src={`/api/projects/${project.id}/images/${image.id}/file`} alt={image.source_path} />
+      {data && project.annotation_type === "object_detection" && (
+        <svg viewBox={`0 0 ${image.width} ${image.height}`} preserveAspectRatio="none">
+          {data.boxes.map((box, index) => <rect key={index} x={box.x} y={box.y}
+            width={box.width} height={box.height} fill={color(box.category_id)} fillOpacity=".12"
+            stroke={color(box.category_id)} strokeWidth="2" vectorEffect="non-scaling-stroke" />)}
+        </svg>
+      )}
+      {data && project.annotation_type === "image_classification" && (
+        <div className="preview-labels">{data.labels.map((id) =>
+          <span key={id}>{project.classes.find((item) => item.id === id)?.name}</span>)}</div>
+      )}
+    </div>
+  );
+}
+
+function Review({ project, images, filtered, onClear, onEdit, onReviewed }) {
+  const [status, setStatus] = useState("all");
+  const [rejecting, setRejecting] = useState(null);
+  const [comment, setComment] = useState("");
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  const visible = status === "all" ? images : images.filter((image) => image.review_status === status);
+  async function decide(image, nextStatus, reason = "") {
+    setBusy(image.id); setError("");
+    try {
+      const saved = await api(`/projects/${project.id}/images/${image.id}/review`, {
+        method: "PUT", body: JSON.stringify({ status: nextStatus, comment: reason }),
+      });
+      onReviewed(saved); setRejecting(null); setComment("");
+    } catch (e) { setError(e.message); }
+    finally { setBusy(""); }
+  }
+  return (
+    <div>
+      <div className="page-heading">
+        <div><h2>Review annotations</h2><p className="muted">
+          {filtered ? `${images.length} images from this history entry.` : `${images.length} completed images ready for review.`}
+        </p></div>
+        <div className="review-actions"><select aria-label="Filter review status" value={status}
+          onChange={(e) => setStatus(e.target.value)}>
+          <option value="all">All statuses</option><option value="ready_for_review">Ready for review</option>
+          <option value="approved">Approved</option><option value="rejected">Rejected</option>
+        </select>{filtered && <button onClick={onClear}>Show all completed</button>}</div>
+      </div>
+      {error && <div className="alert">{error}</div>}
+      {!visible.length ? <div className="empty"><h2>No annotations to review</h2>
+        <p>Complete an image or open a history entry containing images.</p></div> :
+        <div className="review-grid">{visible.map((image) =>
+          <article className="panel review-card" key={image.id}>
+            <AnnotationPreview project={project} image={image} />
+            <div className="review-card-footer"><div className="truncate"><strong>{image.source_path}</strong>
+              <div className="muted small">{image.width} × {image.height} · {(image.review_status || "draft").replaceAll("_", " ")}</div>
+              {image.review_comment && <div className="small warning-text">{image.review_comment}</div>}</div>
+              <div className="review-actions"><button onClick={() => onEdit(image.id)}>Edit</button>
+                <button disabled={busy === image.id} onClick={() => setRejecting(image)}>Reject</button>
+                <button className="primary" disabled={busy === image.id || image.review_status === "approved"}
+                  onClick={() => decide(image, "approved")}>Approve</button></div></div>
+          </article>)}</div>}
+      {rejecting && <div className="modal-backdrop"><form className="panel export-modal" onSubmit={(e) => {
+        e.preventDefault(); decide(rejecting, "rejected", comment);
+      }}><h2>Reject annotation</h2><p className="muted">Explain what should be corrected.</p>
+        <textarea autoFocus required maxLength="2000" rows="4" value={comment} onChange={(e) => setComment(e.target.value)} />
+        <div className="actions"><button type="button" onClick={() => { setRejecting(null); setComment(""); }}>Cancel</button>
+          <button className="danger" disabled={!comment.trim() || !!busy}>Reject</button></div></form></div>}
+    </div>
+  );
+}
+
+function Settings({ project, onUpdated }) {
+  const [form, setForm] = useState({ name: project.name, description: project.description || "",
+    labelling_instructions: project.labelling_instructions || "", ai_instructions: project.ai_instructions || "",
+    export_train_percent: project.export_train_percent ?? 80 });
+  const [saving, setSaving] = useState(false); const [message, setMessage] = useState("");
+  function field(name) { return { value: form[name], onChange: (e) => setForm({ ...form,
+    [name]: e.target.type === "number" ? Number(e.target.value) : e.target.value }) }; }
+  async function submit(e) {
+    e.preventDefault(); setSaving(true); setMessage("");
+    try { const saved = await api(`/projects/${project.id}`, { method: "PUT", body: JSON.stringify(form) });
+      onUpdated(saved); setMessage("Project settings saved."); }
+    catch (e) { setMessage(e.message); } finally { setSaving(false); }
+  }
+  return <form className="panel settings-form" onSubmit={submit}><div><h2>Project settings</h2>
+    <p className="muted">Guidance is shared with labellers. AI guidance is also included in automatic suggestions.</p></div>
+    <label>Project name<input required maxLength="150" {...field("name")} /></label>
+    <label>Description<textarea rows="3" maxLength="2000" placeholder="Purpose, source, and scope of this dataset." {...field("description")} /></label>
+    <label>Labelling instructions<textarea rows="5" maxLength="4000" placeholder="Rules labellers should follow." {...field("labelling_instructions")} /></label>
+    {project.annotation_type === "object_detection" && <label>AI instructions<textarea rows="5" maxLength="4000"
+      placeholder="Project-specific criteria for AI-generated boxes." {...field("ai_instructions")} /></label>}
+    <label>Default train split (%)<input type="number" min="0" max="100" {...field("export_train_percent")} /></label>
+    {message && <div className={message.endsWith("saved.") ? "notice" : "alert"}>{message}</div>}
+    <div className="actions"><button className="primary" disabled={saving}>{saving ? "Saving…" : "Save settings"}</button></div>
+  </form>;
+}
+
+function History({ project, onView, onRestored }) {
+  const [history, setHistory] = useState(null);
+  const [error, setError] = useState("");
+  const [restoring, setRestoring] = useState("");
+  async function load() {
+    try { setHistory(await api(`/projects/${project.id}/history`)); setError(""); }
+    catch (e) { setError(e.message); }
+  }
+  useEffect(() => { load(); }, [project.id]);
+  async function view(batch) {
+    try { onView(await api(`/projects/${project.id}/batches/${batch.id}/images`)); }
+    catch (e) { setError(e.message); }
+  }
+  async function restore(entry, image) {
+    setRestoring(image.id); setError("");
+    try {
+      await api(`/projects/${project.id}/history/${entry.id}/deleted/${image.id}/restore`, { method: "POST" });
+      await load(); await onRestored();
+    } catch (e) { setError(e.message); }
+    finally { setRestoring(""); }
+  }
+  return <div>
+    <div className="page-heading"><div><h2>Dataset history</h2>
+      <p className="muted">Every image addition creates a stable dataset membership version.</p></div></div>
+    {error && <div className="alert">{error}<button onClick={load}>Retry</button></div>}
+    {history && <div className="panel table-wrap"><table><thead><tr>
+      <th>VERSION</th><th>EVENT</th><th>SAMPLE CHANGE</th><th>TOTAL SAMPLES</th><th>DATE</th><th>DETAILS</th>
+    </tr></thead><tbody>{history.map((entry) => <tr key={entry.id}>
+      <td>v{entry.version}</td><td>{entry.kind === "project_created" ? "Project Created" : entry.kind === "images_deleted" ? "Images Deleted" : entry.kind === "images_restored" ? "Images Restored" : "New Additions"}</td>
+      <td className={entry.sample_delta < 0 ? "warning-text" : "accent"}>{entry.sample_delta > 0 ? "+" : ""}{entry.sample_delta}</td>
+      <td>{entry.total_samples}</td><td>{new Date(`${entry.created_at}${entry.created_at.endsWith("Z") ? "" : "Z"}`).toLocaleString()}</td>
+      <td>{entry.kind === "images_deleted" ? <details><summary>View deleted image</summary>
+        <div className="history-details">{entry.details.map((item) => <article key={item.id}>
+          {item.restorable && <img src={`/api/projects/${project.id}/history/${entry.id}/deleted/${item.id}/file`}
+            alt={item.source_path} />}<div><strong>{item.source_path}</strong>
+            <div className="muted small">{item.width} × {item.height} · {item.completed ? "Annotated" : "Incomplete"}</div></div>
+          <button className="primary" disabled={!item.restorable || !!restoring}
+            onClick={() => restore(entry, item)}>{restoring === item.id ? "Restoring…" : item.restorable ? "Restore image" : "Already restored"}</button>
+        </article>)}</div></details> :
+        <button className="text-button" disabled={!entry.samples} onClick={() => view(entry)}>View images</button>}</td>
+    </tr>)}</tbody></table></div>}
+  </div>;
 }
 
 function Editor({
@@ -566,6 +840,7 @@ function Editor({
   onLock,
   onNavigate,
   onSaved,
+  onDeleted,
 }) {
   const [data, setData] = useState(null);
   const [category, setCategory] = useState(project.classes[0].id);
@@ -577,15 +852,23 @@ function Editor({
   const [ready, setReady] = useState(false);
   const [aiWorking, setAiWorking] = useState(false);
   const [zoom, setZoom] = useState(1);
+  const [brightness, setBrightness] = useState(100);
+  const [contrast, setContrast] = useState(100);
+  const [panMode, setPanMode] = useState(false);
   const svg = useRef(null);
+  const editorElement = useRef(null);
+  const canvasScroll = useRef(null);
+  const panGesture = useRef(null);
   const gesture = useRef(null);
   const inFlight = useRef(false);
+  const undoStack = useRef([]);
+  const redoStack = useRef([]);
   const path = `/projects/${project.id}/images/${image.id}`;
   const classification = project.annotation_type === "image_classification";
   useEffect(() => {
     const controller = new AbortController();
     api(path, { signal: controller.signal })
-      .then(setData)
+      .then((next) => { setData(next); undoStack.current = []; redoStack.current = []; })
       .catch((e) => {
         if (e.name !== "AbortError") setError(e.message);
       });
@@ -616,8 +899,13 @@ function Editor({
     window.addEventListener("beforeunload", prevent);
     return () => window.removeEventListener("beforeunload", prevent);
   }, [saving, dirty, uploading]);
-  async function persist(next) {
+  async function persist(next, record = true) {
     if (inFlight.current) return false;
+    if (record && data) {
+      undoStack.current.push(structuredClone(data));
+      if (undoStack.current.length > 50) undoStack.current.shift();
+      redoStack.current = [];
+    }
     inFlight.current = true;
     setData(next);
     setDirty(true);
@@ -731,6 +1019,52 @@ function Editor({
       if (index < total - 1) onNavigate(index + 1);
     }
   }
+  async function deleteCurrentImage() {
+    if (!window.confirm(`Delete “${image.source_path}” from this dataset? Its annotations will also be removed.`)) return;
+    setSaving(true); setError("");
+    try {
+      await api(path, { method: "DELETE" });
+      onDeleted(image.id);
+    } catch (e) { setError(e.message); setSaving(false); }
+  }
+  async function undo() {
+    if (!undoStack.current.length || disabled || dirty) return;
+    const previous = undoStack.current.pop();
+    redoStack.current.push(structuredClone(data));
+    if (!(await persist({ ...previous, revision: data.revision }, false))) {
+      undoStack.current.push(previous); redoStack.current.pop();
+    }
+  }
+  async function redo() {
+    if (!redoStack.current.length || disabled || dirty) return;
+    const next = redoStack.current.pop();
+    undoStack.current.push(structuredClone(data));
+    if (!(await persist({ ...next, revision: data.revision }, false))) {
+      redoStack.current.push(next); undoStack.current.pop();
+    }
+  }
+  function deleteSelected() {
+    if (selected === null || classification || disabled || dirty) return;
+    persist({ ...data, boxes: data.boxes.filter((_, i) => i !== selected) });
+    setSelected(null);
+  }
+  useEffect(() => {
+    function shortcut(e) {
+      if (["INPUT", "SELECT", "TEXTAREA"].includes(e.target.tagName)) return;
+      const modifier = e.ctrlKey || e.metaKey;
+      if (modifier && e.key.toLowerCase() === "z") { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+      if (modifier && e.key.toLowerCase() === "y") { e.preventDefault(); redo(); return; }
+      if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); deleteSelected(); }
+      else if (e.key === "ArrowLeft" && index > 0 && !saving && !dirty) onNavigate(index - 1);
+      else if (e.key === "ArrowRight" && index < total - 1 && !saving && !dirty) onNavigate(index + 1);
+      else if (e.key === "Enter" && !disabled && !dirty) complete();
+      else if ((e.key === "+" || e.key === "=") && zoom < 3) setZoom((value) => Math.min(3, value + .25));
+      else if (e.key === "-" && zoom > 1) setZoom((value) => Math.max(1, value - .25));
+      else if (/^[1-9]$/.test(e.key) && project.classes[Number(e.key) - 1]) setCategory(project.classes[Number(e.key) - 1].id);
+    }
+    window.addEventListener("keydown", shortcut);
+    return () => window.removeEventListener("keydown", shortcut);
+  }, [data, selected, disabled, dirty, saving, index, total, zoom]);
   const boxes = data?.boxes || [];
   const displayBoxes = boxes.map((b, i) =>
     draft && gesture.current?.index === i ? draft : b,
@@ -767,7 +1101,7 @@ function Editor({
           </button>
         </div>
       )}
-      <div className="editor">
+      <div className="editor" ref={editorElement}>
         <section className="canvas-panel">
           <div className="canvas-toolbar">
             <span className="truncate">{image.source_path}</span>
@@ -775,6 +1109,10 @@ function Editor({
               {image.width} × {image.height}
             </span>
             <div className="zoom-controls">
+              <button aria-label="Undo" disabled={!undoStack.current.length || disabled || dirty} onClick={undo}>↶</button>
+              <button aria-label="Redo" disabled={!redoStack.current.length || disabled || dirty} onClick={redo}>↷</button>
+              <button className={panMode ? "chosen" : ""} aria-pressed={panMode}
+                onClick={() => setPanMode((value) => !value)}>Pan</button>
               <button
                 aria-label="Zoom out"
                 disabled={zoom <= 1}
@@ -792,14 +1130,28 @@ function Editor({
               >
                 ＋
               </button>
+              <button onClick={() => editorElement.current?.requestFullscreen()}>Fullscreen</button>
             </div>
           </div>
-          <div className="canvas-scroll">
+          <div className="image-adjustments">
+            <label>Brightness <input type="range" min="25" max="200" value={brightness}
+              onChange={(e) => setBrightness(Number(e.target.value))} /><span>{brightness}%</span></label>
+            <label>Contrast <input type="range" min="25" max="200" value={contrast}
+              onChange={(e) => setContrast(Number(e.target.value))} /><span>{contrast}%</span></label>
+            <button onClick={() => { setBrightness(100); setContrast(100); }}>Reset image</button>
+          </div>
+          <div className="canvas-scroll" ref={canvasScroll}
+            onPointerDown={(e) => { if (!panMode) return; panGesture.current = { x: e.clientX, y: e.clientY,
+              left: canvasScroll.current.scrollLeft, top: canvasScroll.current.scrollTop }; e.currentTarget.setPointerCapture(e.pointerId); }}
+            onPointerMove={(e) => { if (!panGesture.current) return; canvasScroll.current.scrollLeft = panGesture.current.left - e.clientX + panGesture.current.x;
+              canvasScroll.current.scrollTop = panGesture.current.top - e.clientY + panGesture.current.y; }}
+            onPointerUp={() => { panGesture.current = null; }}>
             <div className="image-surface" style={{ width: `${zoom * 100}%` }}>
               <img
                 src={`/api${path}/file`}
                 alt={image.source_path}
                 draggable="false"
+                style={{ filter: `brightness(${brightness}%) contrast(${contrast}%)` }}
                 onLoad={() => setReady(true)}
                 onError={() => {
                   setReady(false);
@@ -818,7 +1170,7 @@ function Editor({
                   setDraft(null);
                 }}
                 aria-label="Image annotation canvas"
-                style={{ cursor: disabled || dirty ? "wait" : classification ? "default" : "crosshair" }}
+                style={{ pointerEvents: panMode ? "none" : "auto", cursor: disabled || dirty ? "wait" : classification ? "default" : "crosshair" }}
               >
                 {displayBoxes.map((b, i) => (
                   <g key={i}>
@@ -1028,17 +1380,64 @@ function Editor({
             )}
             <p className="muted small">
               {classification ? "Classes" : "Boxes"} save automatically. Mark an image complete to include it in
-              KPIs and export.
+              the Dashboard and export.
             </p>
+            <button className="danger delete-image-button" disabled={saving || uploading || !!draft}
+              onClick={deleteCurrentImage}>Delete image from dataset</button>
           </div>
         </aside>
       </div>
       <p className="editor-hint">
         {classification ? "Choose image classes in the sidebar, then complete and move to the next image." :
-          "Drag a box to move it. Select a box and drag its bottom-right handle to resize. Zoom in for finer detail."}
+          "Drag a box to move it. Resize with its handle. Shortcuts: ←/→ navigate, 1–9 class, Delete box, Enter complete, Ctrl/Cmd+Z undo, +/− zoom."}
       </p>
     </>
   );
+}
+
+function Comments({ project }) {
+  const [comments, setComments] = useState(null);
+  const [body, setBody] = useState("");
+  const [posting, setPosting] = useState(false);
+  const [error, setError] = useState("");
+  async function load() {
+    try { setComments(await api(`/projects/${project.id}/comments`)); setError(""); }
+    catch (e) { setError(e.message); }
+  }
+  useEffect(() => { load(); }, [project.id]);
+  async function submit(e) {
+    e.preventDefault();
+    if (!body.trim()) return;
+    setPosting(true); setError("");
+    try {
+      const comment = await api(`/projects/${project.id}/comments`, {
+        method: "POST", body: JSON.stringify({ body }),
+      });
+      setComments((current) => [comment, ...(current || [])]);
+      setBody("");
+    } catch (e) { setError(e.message); }
+    finally { setPosting(false); }
+  }
+  return <section className="panel comments-block">
+    <div className="comments-heading"><div><h2>Comments</h2>
+      <p className="muted">Share progress updates and notes with the project team.</p></div>
+      <span className="tag">{comments?.length || 0} POSTS</span></div>
+    <form className="comment-form" onSubmit={submit}>
+      <textarea aria-label="New progress update" rows="3" maxLength="4000" required
+        placeholder="Write a progress update…" value={body} disabled={posting}
+        onChange={(e) => setBody(e.target.value)} />
+      <div><span className="muted small">{body.length} / 4000</span>
+        <button className="primary" disabled={posting || !body.trim()}>{posting ? "Posting…" : "Post update"}</button></div>
+    </form>
+    {error && <div className="alert">{error}<button onClick={load}>Retry</button></div>}
+    {comments && !comments.length && <div className="comment-empty">No updates yet. Start the discussion.</div>}
+    <div className="comment-thread">{comments?.map((comment) => <article className="comment" key={comment.id}>
+      <div className="comment-avatar" aria-hidden="true">{comment.author.slice(0, 1).toUpperCase()}</div>
+      <div><header><strong>{comment.author}</strong><time dateTime={comment.created_at}>
+        {new Date(`${comment.created_at}${comment.created_at.endsWith("Z") ? "" : "Z"}`).toLocaleString()}
+      </time></header><p>{comment.body}</p></div>
+    </article>)}</div>
+  </section>;
 }
 
 function Stats({ project }) {
@@ -1047,12 +1446,17 @@ function Stats({ project }) {
   const [error, setError] = useState("");
   const [exporting, setExporting] = useState(false);
   const [showExport, setShowExport] = useState(false);
-  const [filename, setFilename] = useState("annotations");
-  const [description, setDescription] = useState("");
-  const [train, setTrain] = useState(80);
+  const [description, setDescription] = useState(project.description || "");
+  const [train, setTrain] = useState(project.export_train_percent ?? 80);
+  const [quality, setQuality] = useState(null);
+  const [duplicates, setDuplicates] = useState(null);
+  const [showDuplicates, setShowDuplicates] = useState(false);
   async function load() {
     try {
-      setStats(await api(`/projects/${project.id}/stats`));
+      const [nextStats, nextQuality] = await Promise.all([
+        api(`/projects/${project.id}/stats`), api(`/projects/${project.id}/quality`),
+      ]);
+      setStats(nextStats); setQuality(nextQuality);
       setError("");
     } catch (e) {
       setError(e.message);
@@ -1066,33 +1470,39 @@ function Stats({ project }) {
     setExporting(true);
     setError("");
     try {
-      const response = await fetch(`/api/projects/${project.id}/export`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename, description, train_percent: train }),
+      const splits = [trainCount ? "train" : null, stats.completed - trainCount ? "test" : null].filter(Boolean);
+      const exports = await Promise.all(splits.map(async (split) => {
+        const response = await fetch(`/api/projects/${project.id}/export`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ description, train_percent: train, split }),
+        });
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(typeof body.detail === "string" ? body.detail : "Invalid export settings");
+        }
+        return [split, await response.blob()];
+      }));
+      const base = project.name.replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^[._-]+|[._-]+$/g, "").slice(0, 80) || "project";
+      exports.forEach(([split, blob], index) => {
+        const url = URL.createObjectURL(blob);
+        setTimeout(() => {
+          const a = document.createElement("a"); a.href = url; a.download = `${base}_${split}.zip`;
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 60000);
+        }, index * 250);
       });
-      if (!response.ok) {
-        const body = await response.json();
-        throw new Error(
-          typeof body.detail === "string"
-            ? body.detail
-            : "Invalid export settings",
-        );
-      }
-      const url = URL.createObjectURL(await response.blob());
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${filename.replace(/\.(zip|json)$/i, "")}.zip`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
       setShowExport(false);
     } catch (e) {
       setError(e.message);
     } finally {
       setExporting(false);
     }
+  }
+  async function openDuplicates() {
+    setShowDuplicates(true);
+    if (duplicates) return;
+    try { setDuplicates(await api(`/projects/${project.id}/duplicates`)); }
+    catch (e) { setError(e.message); setShowDuplicates(false); }
   }
   const trainCount = stats
     ? Math.floor((stats.completed * train) / 100 + 0.5)
@@ -1111,7 +1521,7 @@ function Stats({ project }) {
             <div>
               <h2>Dataset overview</h2>
               <p className="muted">
-                A clear picture of your labelling progress.
+                {project.description || "A clear picture of your labelling progress."}
               </p>
             </div>
             <button
@@ -1131,15 +1541,30 @@ function Stats({ project }) {
                 `${stats.total ? Math.round((stats.completed / stats.total) * 100) : 0}% complete`,
               ],
               ["REMAINING", stats.remaining, "Ready for your attention"],
+              ["READY FOR REVIEW", stats.review.ready_for_review, "Completed and awaiting a decision"],
+              ["APPROVED", stats.review.approved, `${stats.review.rejected} rejected`],
               [classification ? "IMAGE LABELS" : "BOUNDING BOXES", classification ? stats.labels : stats.boxes, "On completed images"],
-            ].map(([label, value, note]) => (
-              <div className="panel kpi" key={label}>
+              ["SIMILAR IMAGES", stats.similar_images, `${stats.similar_groups} groups · click to review`, true],
+            ].map(([label, value, note, clickable]) => {
+              const Component = clickable ? "button" : "div";
+              const tone = label === "LABELLED" || label === "APPROVED" ? "positive" :
+                label === "REMAINING" || label === "READY FOR REVIEW" || label === "SIMILAR IMAGES" ? "attention" : "neutral";
+              return <Component className={`panel kpi kpi-${tone} ${clickable ? "kpi-button" : ""}`} key={label}
+                disabled={clickable && !value} onClick={clickable ? openDuplicates : undefined}>
                 <div className="eyebrow">{label}</div>
                 <strong>{value}</strong>
                 <span className="muted small">{note}</span>
-              </div>
-            ))}
+              </Component>;
+            })}
           </div>
+          {quality && <section className="panel quality-panel"><div className="section-heading"><div>
+            <h2>Dataset quality</h2><p className="muted">Automatic checks for annotation and split problems.</p>
+          </div><span className="tag">{quality.checks_run} CHECKS</span></div>
+            {!quality.issues.length ? <div className="notice">No quality issues found.</div> :
+              <div className="quality-list">{quality.issues.map((issue) => <article key={issue.code}
+                className={`quality-issue ${issue.severity}`}><strong>{issue.title}</strong>
+                <span className="quality-count">{issue.count}</span><p>{issue.detail}</p></article>)}</div>}
+          </section>}
           <div className="panel representation">
             <h2>Class representation</h2>
             <p className="muted">
@@ -1192,6 +1617,20 @@ function Stats({ project }) {
               </table>
             </div>
           </div>
+          <Comments project={project} />
+          {showDuplicates && <div className="modal-backdrop"><div className="panel duplicate-modal"
+            role="dialog" aria-modal="true" aria-labelledby="duplicate-title">
+            <div className="modal-heading"><div><div className="eyebrow">DATASET QUALITY</div>
+              <h2 id="duplicate-title">Similar image groups</h2></div>
+              <button onClick={() => setShowDuplicates(false)}>Close</button></div>
+            {!duplicates ? <p>Analysing images…</p> : <div className="duplicate-groups">
+              {duplicates.groups.map((group, index) => <section key={group.id}>
+                <h3>Group {index + 1} <span className="muted small">· {group.images.length} images</span></h3>
+                <div className="duplicate-row">{group.images.map((image) => <figure key={image.id}>
+                  <img src={`/api/projects/${project.id}/images/${image.id}/file`} alt={image.source_path} />
+                  <figcaption title={image.source_path}>{image.source_path}</figcaption></figure>)}</div>
+              </section>)}</div>}
+          </div></div>}
           {showExport && (
             <div className="modal-backdrop">
               <form
@@ -1204,23 +1643,12 @@ function Stats({ project }) {
                 <div className="eyebrow">{classification ? "CLASSIFICATION DATASET" : "COCO DATASET"}</div>
                 <h2 id="export-title">Export your annotations</h2>
                 <p className="muted">
-                  {classification ? "Download a ZIP with train/test images and JSON image-class assignments for each split." :
-                    "Download a ZIP with train/test images and a COCO JSON file for each split."} Only completed images are included.
+                  Download {trainCount && stats.completed - trainCount ? "separate" : "an"} import-compatible {trainCount && stats.completed - trainCount ? "archives" : "archive"}: {trainCount ? <strong>{project.name}_train.zip</strong> : null}{trainCount && stats.completed - trainCount ? " and " : null}{stats.completed - trainCount ? <strong>{project.name}_test.zip</strong> : null}. Empty splits are skipped.
                 </p>
-                <label>
-                  File name
-                  <input
-                    autoFocus
-                    required
-                    maxLength={96}
-                    pattern="[A-Za-z0-9][A-Za-z0-9._\-]*"
-                    value={filename}
-                    onChange={(e) => setFilename(e.target.value)}
-                  />
-                </label>
                 <label>
                   Description <span className="muted">(optional)</span>
                   <textarea
+                    autoFocus
                     maxLength={1000}
                     rows={4}
                     placeholder="Describe the dataset, source, purpose, or labelling criteria."
@@ -1279,7 +1707,7 @@ function Stats({ project }) {
                     Cancel
                   </button>
                   <button className="primary" disabled={exporting}>
-                    {exporting ? "Preparing export…" : "Download export ↓"}
+                    {exporting ? "Preparing exports…" : trainCount && stats.completed - trainCount ? "Download train & test ↓" : "Download dataset ↓"}
                   </button>
                 </div>
               </form>

@@ -27,6 +27,6 @@ Every active profile must supply the variables referenced by `services/`. Deploy
 
 Access each application at `http://localhost:PORT`, or use the Docker server IP remotely. Use distinct published ports in the range 1–65535. PostgreSQL initialization variables only initialize an empty database volume; changing the profile does not update existing database users/passwords.
 
-The labeller's `LABELLING_DATA_DIR=/data`, lakeFS local storage settings, and MLflow command are defined in service YAML. For native labeller development, override `LABELLING_DATA_DIR` with a writable local path. See [the labeller guide](../src/labelling/README.md).
+The labeller's `LABELLING_DATA_DIR=/data`, lakeFS local storage settings, and MLflow command are defined in service YAML. The labeller volume holds SQLite, active images, and archived deleted images required by History restoration. For native labeller development, override `LABELLING_DATA_DIR` with a writable local path. See [the labeller guide](../src/labelling/README.md).
 
 When adding a setting, update every profile/template, the relevant service definition, and this table together. Keep private plaintext credentials out of Git; production profiles should be encrypted with your own SOPS policy.
