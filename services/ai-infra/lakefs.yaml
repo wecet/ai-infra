@@ -15,7 +15,6 @@ service:
     internal: false
   environment:
     LAKEFS_DATABASE_TYPE: local
-    LAKEFS_AUTH_ENCRYPT_SECRET_KEY: ~~ENV:LAKEFS_AUTH_ENCRYPT_SECRET_KEY~~
     LAKEFS_BLOCKSTORE_TYPE: local
     LAKEFS_LOCAL_PATH: /data
   ports:

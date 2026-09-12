@@ -22,6 +22,6 @@ Every active profile must supply the variables referenced by `services/`. Deploy
 
 Access each application at `http://localhost:PORT`, or use the Docker server IP remotely. Use distinct published ports in the range 1–65535.
 
-The labeller's `LABELLING_DATA_DIR=/data`, lakeFS local storage settings, and MLflow command are defined in service YAML. The labeller volume holds SQLite, active images, deleted-image archives, and copied images for immutable published versions. For native development, override `LABELLING_DATA_DIR` with a writable local path. See [the labeller guide](../src/labelling/README.md).
+The labeller's `LABELLING_DATA_DIR=/data`, lakeFS local storage settings, and MLflow command are defined in service YAML. The ignored `lakefs.env` supplies `LAKEFS_ENDPOINT`, `LAKEFS_ACCESS_KEY_ID`, `LAKEFS_SECRET_ACCESS_KEY`, `LAKEFS_REPOSITORY`, `LAKEFS_BRANCH`, and `LAKEFS_STORAGE_NAMESPACE` for pushing published snapshots. The labeller volume holds SQLite, active images, deleted-image archives, and copied images for immutable published versions. For native development, override `LABELLING_DATA_DIR` with a writable local path. See [the labeller guide](../src/labelling/README.md).
 
 When adding a setting, update every profile/template, the relevant service definition, and this table together. Keep private plaintext credentials out of Git; production profiles should be encrypted with your own SOPS policy.

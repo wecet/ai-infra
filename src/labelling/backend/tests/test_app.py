@@ -203,7 +203,7 @@ def test_class_management_remaps_annotations_and_revisions(client):
     assert client.post(f'/api/projects/{pid}/classes', json={'name': 'bolt', 'color': '#123456'}).status_code == 422
 
 
-def test_publish_is_immutable_and_bulk_review_approves_selection(client):
+def test_publish_is_immutable_and_bulk_review_approves_selection(client, monkeypatch):
     pid = project(client)
     first = upload(client, pid, 'first.png')
     second = upload(client, pid, 'second.png', (90, 70))
@@ -229,6 +229,18 @@ def test_publish_is_immutable_and_bulk_review_approves_selection(client):
         assert frozen['info']['published_version'] == published.json()['name']
         assert len(frozen['images']) == 2 and len(frozen['annotations']) == 1
         assert all(image['file_name'] in archive.namelist() for image in frozen['images'])
+    pushed = {}
+    def fake_push(objects, message, metadata):
+        pushed.update(objects=objects, message=message, metadata=metadata)
+        return {'commit_id': 'abc123', 'repository': 'labelling-datasets', 'branch': 'main'}
+    monkeypatch.setattr(service.versions.lakefs_client, 'push_snapshot', fake_push)
+    lakefs = client.post(f'/api/projects/{pid}/versions/{version_id}/lakefs',
+                         headers={'x-forwarded-preferred-username': 'owen'})
+    assert lakefs.status_code == 200 and lakefs.json()['commit_id'] == 'abc123'
+    assert pushed['message'].startswith(f"Saving {published.json()['name']} at ")
+    assert pushed['message'].endswith(' by owen')
+    assert [path.split('/')[-2] for path, _, _ in pushed['objects']].count('images') == 2
+    assert any(path.endswith('.json') and '/annotations/' in path for path, _, _ in pushed['objects'])
     assert save(client, pid, first, boxes=[]).status_code == 200
     after = client.get(f'/api/projects/{pid}/versions/{version_id}').json()
     assert after['snapshot'] == before['snapshot']
@@ -544,7 +556,7 @@ def test_import_project_zip_creates_repository_project_and_rolls_back_errors(cli
     image_data = io.BytesIO()
     Image.new('RGB', (60, 40), '#457890').save(image_data, 'PNG')
     document = {
-        'info': {'project_name': 'Imported Inspection', 'annotation_type': 'object_detection'},
+        'info': {'project_name': 'Imported Inspection', 'annotation_type': 'image_classification'},
         'images': [{'id': 1, 'file_name': 'images/sample.png', 'width': 60, 'height': 40}],
         'categories': [{'id': 5, 'name': 'Bolt'}, {'id': 8, 'name': 'Panel'}],
         'annotations': [{'id': 1, 'image_id': 1, 'category_id': 5, 'bbox': [4, 5, 20, 10]}],
@@ -559,6 +571,7 @@ def test_import_project_zip_creates_repository_project_and_rolls_back_errors(cli
     assert response.status_code == 201, response.text
     imported = response.json()
     assert imported['project']['name'] == 'Chosen Repository Name'
+    assert imported['project']['annotation_type'] == 'object_detection'
     assert [item['name'] for item in imported['project']['classes']] == ['Bolt', 'Panel']
     assert imported['images_imported'] == 1 and imported['updated'] == 1
     pid = imported['project']['id']
@@ -580,6 +593,31 @@ def test_import_project_zip_creates_repository_project_and_rolls_back_errors(cli
     before = len(client.get('/api/projects').json())
     assert client.post('/api/projects/import', data={'name': 'Invalid'},
                        files={'file': ('invalid.zip', bad_zip.getvalue())}).status_code == 422
+    assert len(client.get('/api/projects').json()) == before
+
+    classification = {
+        'info': {'annotation_type': 'object_detection'},
+        'images': [{'id': 1, 'file_name': 'images/sample.png', 'category_ids': [5]}],
+        'categories': [{'id': 5, 'name': 'Bolt'}], 'annotations': [],
+    }
+    classification_zip = io.BytesIO()
+    with zipfile.ZipFile(classification_zip, 'w') as archive:
+        archive.writestr('annotations/classes.json', json.dumps(classification))
+        archive.writestr('images/sample.png', image_data.getvalue())
+    classified = client.post('/api/projects/import', data={'name': 'Classification'},
+        files={'file': ('classification.zip', classification_zip.getvalue())})
+    assert classified.status_code == 201, classified.text
+    assert classified.json()['project']['annotation_type'] == 'image_classification'
+
+    malformed = classification | {'annotations': [{'image_id': 1, 'category_id': 5}]}
+    malformed_zip = io.BytesIO()
+    with zipfile.ZipFile(malformed_zip, 'w') as archive:
+        archive.writestr('annotations/bad.json', json.dumps(malformed))
+        archive.writestr('images/sample.png', image_data.getvalue())
+    before = len(client.get('/api/projects').json())
+    invalid = client.post('/api/projects/import', data={'name': 'Malformed'},
+        files={'file': ('malformed.zip', malformed_zip.getvalue())})
+    assert invalid.status_code == 422 and 'bbox' in invalid.json()['detail']
     assert len(client.get('/api/projects').json()) == before
 
 

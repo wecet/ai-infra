@@ -2,7 +2,7 @@
 
 A self-hosted MLflow, lakeFS, and image labelling stack deployed through Deployment Manager.
 
-The labeller supports object detection, multi-label image classification, optional AI-generated box suggestions, importable project ZIPs, drag-to-merge projects, managed classes, immutable published versions, searchable annotations, bulk review, auditable image additions, restorable deletions, automated dataset quality checks, project settings, near-duplicate analysis, and timestamped project comments. Its Dashboard displays the project description and exports separate import-compatible train and test archives, skipping empty splits. Configure the ignored `gpt.env` for AI assistance; a blank API key keeps manual labelling available. See the [labelling guide](src/labelling/README.md).
+The labeller supports object detection, multi-label image classification, optional AI-generated box suggestions, validated importable project ZIPs, drag-to-merge projects, managed classes, immutable published versions, LakeFS snapshot publishing, searchable annotations, bulk review, auditable image additions, restorable deletions, automated dataset quality checks, project settings, near-duplicate analysis, and timestamped project comments. Its Dashboard displays the project description and exports separate import-compatible train and test archives, skipping empty splits. Configure the ignored `gpt.env` for AI assistance and `lakefs.env` for the existing LakeFS service. See the [labelling guide](src/labelling/README.md).
 
 ## Repository layout
 

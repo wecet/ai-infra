@@ -16,10 +16,16 @@ service:
   environment:
     LABELLING_DATA_DIR: /data
     GPT_ENV_FILE: /app/gpt.env
+    LAKEFS_ENV_FILE: /app/lakefs.env
   volumes:
   - type: bind
     source: gpt.env
     target: /app/gpt.env
+    readonly: true
+    replace: true
+  - type: bind
+    source: lakefs.env
+    target: /app/lakefs.env
     readonly: true
     replace: true
   - type: volume

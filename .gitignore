@@ -1,5 +1,6 @@
 # Custom
 gpt.env
+lakefs.env
 **/persist/
 **/Persist/
 **/State/

@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 from common import *
+import lakefs_client
 
 router = APIRouter()
 
@@ -54,45 +55,72 @@ def version_detail(project_id: str, version_id: str):
             'snapshot': json.loads(row['snapshot'])}
 
 
+def _version_content(project_id, version_id, detail):
+    snapshot, project = detail['snapshot'], detail['snapshot']['project']
+    safe_project = re.sub(r'[^A-Za-z0-9._-]+', '_', project['name']).strip('._-')[:80] or 'project'
+    archive_name = f"{safe_project}_{detail['name']}"
+    coco = {'info': {'description': project.get('description', ''), 'project_name': project['name'],
+             'annotation_type': project['annotation_type'], 'published_version': detail['name'],
+             'date_created': detail['created_at'], 'images_annotated': len(snapshot['images'])},
+            'licenses': [], 'images': [], 'annotations': [],
+            'categories': [category | {'supercategory': ''} for category in project['classes']]}
+    objects = []
+    for item in snapshot['images']:
+        image_id = len(coco['images']) + 1
+        record = {'id': image_id, 'file_name': f"images/{item['stored_name']}",
+                  'width': item['width'], 'height': item['height'], 'source_path': item['source_path']}
+        if project['annotation_type'] == 'image_classification':
+            record['category_ids'] = item['labels']
+        coco['images'].append(record)
+        path = DATA / 'versions' / project_id / version_id / item['stored_name']
+        if not path.is_file():
+            raise HTTPException(404, f'Frozen image {item["source_path"]} is unavailable')
+        objects.append((record['file_name'], path.read_bytes(), 'application/octet-stream'))
+        for box in item['boxes']:
+            coco['annotations'].append({'id': len(coco['annotations']) + 1, 'image_id': image_id,
+                'category_id': box['category_id'], 'bbox': [box['x'], box['y'], box['width'], box['height']],
+                'area': box['width'] * box['height'], 'iscrowd': 0, 'segmentation': []})
+    annotation_path = f'annotations/{archive_name}.json'
+    objects.append((annotation_path, json.dumps(coco, indent=2).encode(), 'application/json'))
+    return archive_name, coco, objects
+
+
 @router.get('/api/projects/{project_id}/versions/{version_id}/export')
 def export_version(project_id: str, version_id: str):
     detail = version_detail(project_id, version_id)
-    snapshot = detail['snapshot']
-    project = snapshot['project']
-    safe_project = re.sub(r'[^A-Za-z0-9._-]+', '_', project['name']).strip('._-')[:80] or 'project'
-    archive_name = f"{safe_project}_{detail['name']}"
+    archive_name, _, objects = _version_content(project_id, version_id, detail)
     fd, temp_path = tempfile.mkstemp(suffix='.zip')
     os.close(fd)
     try:
-        coco = {'info': {'description': project.get('description', ''), 'project_name': project['name'],
-                 'annotation_type': project['annotation_type'], 'published_version': detail['name'],
-                 'date_created': detail['created_at'], 'images_annotated': len(snapshot['images'])},
-                'licenses': [], 'images': [], 'annotations': [],
-                'categories': [category | {'supercategory': ''} for category in project['classes']]}
         with zipfile.ZipFile(temp_path, 'w', zipfile.ZIP_DEFLATED) as archive:
             archive.writestr('annotations/', b'')
             archive.writestr('images/', b'')
-            for item in snapshot['images']:
-                image_id = len(coco['images']) + 1
-                record = {'id': image_id, 'file_name': f"images/{item['stored_name']}",
-                          'width': item['width'], 'height': item['height'],
-                          'source_path': item['source_path']}
-                if project['annotation_type'] == 'image_classification':
-                    record['category_ids'] = item['labels']
-                coco['images'].append(record)
-                archive.write(DATA / 'versions' / project_id / version_id / item['stored_name'],
-                              record['file_name'])
-                for box in item['boxes']:
-                    coco['annotations'].append({'id': len(coco['annotations']) + 1, 'image_id': image_id,
-                        'category_id': box['category_id'],
-                        'bbox': [box['x'], box['y'], box['width'], box['height']],
-                        'area': box['width'] * box['height'], 'iscrowd': 0, 'segmentation': []})
-            archive.writestr(f'annotations/{archive_name}.json', json.dumps(coco, indent=2))
+            for path, content, _ in objects:
+                archive.writestr(path, content)
     except Exception:
         Path(temp_path).unlink(missing_ok=True)
         raise
     return FileResponse(temp_path, media_type='application/zip', filename=f'{archive_name}.zip',
                         background=BackgroundTask(lambda: Path(temp_path).unlink(missing_ok=True)))
+
+
+@router.post('/api/projects/{project_id}/versions/{version_id}/lakefs')
+def push_version_to_lakefs(project_id: str, version_id: str, request: Request):
+    detail = version_detail(project_id, version_id)
+    archive_name, _, objects = _version_content(project_id, version_id, detail)
+    username = (request.headers.get('x-forwarded-preferred-username') or
+                request.headers.get('x-forwarded-user') or 'admin').strip()[:150] or 'admin'
+    date = datetime.now(timezone.utc).strftime('%d-%m-%y')
+    message = f"Saving {detail['name']} at {date} by {username}"
+    prefix = f'{archive_name}/'
+    try:
+        result = lakefs_client.push_snapshot(
+            [(prefix + path, content, content_type) for path, content, content_type in objects],
+            message, {'dataset_version': detail['name'], 'project': detail['snapshot']['project']['name'],
+                      'published_by': detail['author'], 'pushed_by': username})
+    except ValueError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    return result | {'message': message, 'path': prefix}
 
 
 @router.get('/api/projects/{project_id}/versions/{version_id}/images/{image_id}/file')

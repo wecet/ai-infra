@@ -5,6 +5,46 @@ from routes.datasets import import_annotations
 
 router = APIRouter()
 
+
+def _validate_import_document(document, filename):
+    if not isinstance(document, dict):
+        raise HTTPException(422, f'{filename}: annotation JSON must be an object')
+    images, categories, annotations = (document.get('images'), document.get('categories'),
+                                       document.get('annotations', []))
+    if not isinstance(images, list) or not isinstance(categories, list) or not categories:
+        raise HTTPException(422, f'{filename}: images and a non-empty categories list are required')
+    if not isinstance(annotations, list):
+        raise HTTPException(422, f'{filename}: annotations must be a list')
+    category_ids = {item.get('id') for item in categories if isinstance(item, dict)}
+    if len(category_ids) != len(categories) or None in category_ids:
+        raise HTTPException(422, f'{filename}: every category needs a unique id')
+    image_ids = set()
+    for item in images:
+        if not isinstance(item, dict) or item.get('id') is None or not isinstance(item.get('file_name'), str):
+            raise HTTPException(422, f'{filename}: every image needs an id and file_name')
+        if item['id'] in image_ids:
+            raise HTTPException(422, f'{filename}: image ids must be unique')
+        image_ids.add(item['id'])
+    has_boxes = False
+    for item in annotations:
+        if not isinstance(item, dict) or item.get('image_id') not in image_ids:
+            raise HTTPException(422, f'{filename}: annotation refers to an unknown image')
+        if item.get('category_id') not in category_ids:
+            raise HTTPException(422, f'{filename}: annotation refers to an unknown category')
+        bbox = item.get('bbox')
+        if not isinstance(bbox, list) or len(bbox) != 4 or any(
+                not isinstance(value, (int, float)) or isinstance(value, bool) for value in bbox):
+            raise HTTPException(422, f'{filename}: every annotation must contain a numeric four-value bbox')
+        if bbox[0] < 0 or bbox[1] < 0 or bbox[2] <= 0 or bbox[3] <= 0:
+            raise HTTPException(422, f'{filename}: bounding boxes must have a non-negative origin and positive size')
+        has_boxes = True
+    if not has_boxes:
+        for item in images:
+            labels = item.get('category_ids', [])
+            if not isinstance(labels, list) or any(label not in category_ids for label in labels):
+                raise HTTPException(422, f'{filename}: category_ids must be a list of known category ids')
+    return 'object_detection' if has_boxes else 'image_classification'
+
 @router.get('/api/projects')
 def projects():
     with database() as db:
@@ -63,14 +103,16 @@ def import_project(name: str = Form(...), file: UploadFile = File(...)):
                          PurePosixPath(item.filename).suffix.lower() in {'.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tif', '.tiff'}]
         if not annotation_members or not any(name == 'images/' or name.startswith('images/') for name in names):
             raise HTTPException(422, 'ZIP must contain annotations/*.json and images/*')
-        documents = [json.loads(archive.read(item)) for item in annotation_members]
+        named_documents = [(item.filename, json.loads(archive.read(item))) for item in annotation_members]
     except HTTPException:
         raise
     except (zipfile.BadZipFile, json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise HTTPException(422, 'Invalid project ZIP or annotation JSON') from exc
-    documents = [item for item in documents if isinstance(item, dict) and item.get('categories')]
-    if not documents:
-        raise HTTPException(422, 'Annotation JSON must contain a categories list')
+    documents = [item for _, item in named_documents]
+    inferred_types = {_validate_import_document(document, filename)
+                      for filename, document in named_documents}
+    if len(inferred_types) != 1:
+        raise HTTPException(422, 'All annotation JSON files must describe the same annotation type')
     first = documents[0]
     classes = [item.get('name', '').strip() for item in first['categories']]
     if any(not item for item in classes):
@@ -79,13 +121,11 @@ def import_project(name: str = Form(...), file: UploadFile = File(...)):
     for document in documents[1:]:
         if {item.get('name', '').strip().casefold() for item in document['categories']} != class_names:
             raise HTTPException(422, 'All annotation JSON files must define the same classes')
-    types = {item.get('info', {}).get('annotation_type', 'object_detection') for item in documents}
-    if not types <= {'object_detection', 'image_classification'} or len(types) != 1:
-        raise HTTPException(422, 'All annotation JSON files must use the same supported annotation type')
+    annotation_type = inferred_types.pop()
     project_name = name.strip()
     if not project_name or len(project_name) > 150:
         raise HTTPException(422, 'Enter a project name of 1–150 characters')
-    created = create_project(ProjectCreate(name=project_name, classes=classes, annotation_type=types.pop()))
+    created = create_project(ProjectCreate(name=project_name, classes=classes, annotation_type=annotation_type))
     if not image_members and all(not document.get('images') for document in documents):
         return {'project': created, 'updated': 0, 'images_imported': 0, 'unmatched': []}
     try:
