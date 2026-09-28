@@ -4,6 +4,11 @@ import CreateProject from "./components/CreateProject";
 import Project from "./components/Project";
 
 function App() {
+  const [theme, setTheme] = useState(() => {
+    const saved = window.localStorage.getItem("labelling-theme");
+    if (saved === "light" || saved === "dark") return saved;
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  });
   const [projects, setProjects] = useState([]);
   const [project, setProject] = useState(null);
   const [creating, setCreating] = useState(false);
@@ -30,6 +35,11 @@ function App() {
   useEffect(() => {
     refresh();
   }, []);
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme;
+    window.localStorage.setItem("labelling-theme", theme);
+  }, [theme]);
   async function open(id) {
     try {
       setProject(await api(`/projects/${id}`));
@@ -139,7 +149,22 @@ function App() {
             <small>Dataset workspace</small>
           </span>
         </a>
-        <span className="tag masthead-status"><span className="status-dot" />Workspace ready</span>
+        <div className="masthead-actions">
+          <span className="tag masthead-status"><span className="status-dot" />Workspace ready</span>
+          <button
+            type="button"
+            className="theme-toggle"
+            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+            aria-pressed={theme === "dark"}
+            title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+            onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")}
+          >
+            <span className="theme-toggle-track" aria-hidden="true">
+              <span className="theme-toggle-thumb" />
+            </span>
+            <span>{theme === "dark" ? "Light" : "Dark"}</span>
+          </button>
+        </div>
       </header>
       <nav className="workspace-bar" aria-label="Workspace navigation">
         <label className="workspace-selector">
