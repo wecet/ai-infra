@@ -21,12 +21,20 @@ def settings():
          if (parent / 'gpt.env').is_file()), Path('/app/gpt.env'))
     values = {}
     try:
-        for line in path.read_text().splitlines():
-            parts = shlex.split(line, comments=True)
-            if not parts:
-                continue
-            key, value = ' '.join(parts).removeprefix('export ').split('=', 1)
-            values[key.strip()] = value.strip()
+        if path.is_file():
+            for line in path.read_text().splitlines():
+                parts = shlex.split(line, comments=True)
+                if not parts:
+                    continue
+                key, value = ' '.join(parts).removeprefix('export ').split('=', 1)
+                values[key.strip()] = value.strip()
+        if not configured:
+            for key in ('OPENAI_API_KEY', 'OPENAI_MODEL', 'OPENAI_BASE_URL',
+                        'OPENAI_TIMEOUT_SECONDS', 'OPENAI_MAX_OUTPUT_TOKENS',
+                        'OPENAI_IMAGE_DETAIL', 'OPENAI_PROJECT', 'OPENAI_ORGANIZATION',
+                        'OPENAI_REASONING_EFFORT'):
+                if key in os.environ:
+                    values[key] = os.environ[key]
         if not values.get('OPENAI_API_KEY') or not values.get('OPENAI_MODEL'):
             raise ValueError('Missing key or model')
         base_url = values.get('OPENAI_BASE_URL', 'https://api.openai.com/v1').rstrip('/')

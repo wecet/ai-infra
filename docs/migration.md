@@ -1,24 +1,13 @@
 # Migration and persistence
 
-The labeller source moved from `labelling/` to `src/labelling/`. Its container data path remains `/data`. Startup applies additive SQLite migrations for project types, whole-image labels, import batches, annotation revisions, perceptual hashes, project comments, project settings, and review metadata while retaining existing projects and annotations. Existing completed images enter **Ready for Review**. Nginx and custom hostnames have been removed. Applications publish direct ports configured by `LABELLING_PORT` (8080), `MLFLOW_PORT` (5001), and `LAKEFS_PORT` (8002). The MLflow and lakeFS defaults avoid ports held by the legacy Compose stack during migration. Remove obsolete hosts-file entries if no longer needed.
+The classic Compose stack uses these default named volumes:
 
-## Existing installations
-
-1. Record the running containers' volume mounts with `docker inspect mlops-lakefs mlops-labelling`. Back up data before handing the deployment to a new manager.
-2. Copy settings from an older installation's root `.env` into the chosen profile, especially `LAKEFS_AUTH_ENCRYPT_SECRET_KEY`. Keep lakeFS CLI access keys in your CLI configuration. This repository no longer uses a root `.env`.
-3. Set `LAKEFS_VOLUME` and `LABELLING_VOLUME` to the actual existing Docker volume names. Defaults match the original `ai-infra` Compose project. A different checkout/project name may have created different names. Missing names create empty volumes; they do not migrate data.
-4. Preserve any MLflow tracking data from the existing container before removing it. The previous Compose configuration had no MLflow volume or explicit backend/artifact store; this restructuring preserves that behavior.
-5. Stop the old stack from its original checkout without deleting volumes, using `docker compose down`, before switching control to Deployment Manager.
-6. Review the Deployment Manager reconciliation plan and apply removal of obsolete containers that are no longer defined by this workspace.
-7. Verify existing lakeFS repositories and labelling projects, images, annotations, History entries, Dashboard comments, Review states, Settings, quality checks, and paired train/test exports. Existing labelling images are assigned to the migrated project's initial **Project Created** history entry. Images deleted after this upgrade are archived and can be previewed and restored from History. Historic deletion entries created before archive support retain their source paths but cannot recover files that were already removed.
-
-## Storage
-
-| Service | Container path | Profile volume setting |
+| Service | Volume | Container path |
 | --- | --- | --- |
-| lakeFS | `/data` | `LAKEFS_VOLUME` |
-| Labeller | `/data` | `LABELLING_VOLUME` |
+| Labelling Studio | `ai-infra_labelling_data` | `/data` |
+| lakeFS | `ai-infra_lakefs_data` | `/data` |
+| MLflow | `ai-infra_mlflow_data` | `/mlflow` |
 
-Stop the consuming service before backing up its entire volume. The labeller requires SQLite, active images under `/data/images`, deleted-image archives under `/data/deleted`, and published snapshots under `/data/versions`. Backing up only SQLite leaves deletion and version records without their image files. Restore onto the same target host and set the profile to the restored volume name.
+To reuse an existing installation, stop its containers without deleting volumes, set the actual volume names in `.env`, and run `docker compose up --build -d`. Preserve the existing lakeFS encryption key and access credentials. Back up volumes before migration.
 
-Never use `down -v` when retaining data: Compose can delete the configured named volumes. Deployment Manager and Compose share the configured physical volume names, even though their network/container naming differs.
+The labelling volume must be backed up as a whole: SQLite records reference active images, deleted-image archives, and immutable version snapshots stored alongside the database. Never use `docker compose down -v` when retaining data.

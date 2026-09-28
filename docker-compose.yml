@@ -1,0 +1,146 @@
+name: ai-infra
+
+services:
+  labelling:
+    build:
+      context: ./src/labelling
+    image: ${LABELLING_IMAGE:-ai-infra/labelling:local}
+    restart: unless-stopped
+    environment:
+      LABELLING_DATA_DIR: /data
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      OPENAI_TIMEOUT_SECONDS: ${OPENAI_TIMEOUT_SECONDS:-90}
+      OPENAI_MAX_OUTPUT_TOKENS: ${OPENAI_MAX_OUTPUT_TOKENS:-4096}
+      OPENAI_IMAGE_DETAIL: ${OPENAI_IMAGE_DETAIL:-high}
+      OPENAI_PROJECT: ${OPENAI_PROJECT:-}
+      OPENAI_ORGANIZATION: ${OPENAI_ORGANIZATION:-}
+      OPENAI_REASONING_EFFORT: ${OPENAI_REASONING_EFFORT:-}
+      LAKEFS_ENDPOINT: http://lakefs:8000/api/v1
+      LAKEFS_ACCESS_KEY_ID: ${LAKEFS_ACCESS_KEY_ID}
+      LAKEFS_SECRET_ACCESS_KEY: ${LAKEFS_SECRET_ACCESS_KEY}
+      LAKEFS_REPOSITORY: ${LAKEFS_REPOSITORY:-datasets}
+      LAKEFS_BRANCH: ${LAKEFS_BRANCH:-main}
+      LAKEFS_STORAGE_NAMESPACE: ${LAKEFS_STORAGE_NAMESPACE:-local://datasets}
+    ports:
+      - "${LABELLING_PORT:-8081}:8080"
+    volumes:
+      - labelling_data:/data
+    depends_on:
+      lakefs:
+        condition: service_healthy
+    networks:
+      - ai-infra
+    logging: &default-logging
+      driver: json-file
+      options:
+        max-size: ${LOG_MAX_SIZE:-10m}
+        max-file: "${LOG_MAX_FILE:-3}"
+
+  lakefs-permissions:
+    image: ${LAKEFS_IMAGE:-treeverse/lakefs:latest}
+    user: root
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["mkdir -p /data/metadata /data/block && chown -R 100:101 /data"]
+    restart: "no"
+    network_mode: none
+    volumes:
+      - lakefs_data:/data
+
+  lakefs-init:
+    image: ${LAKEFS_IMAGE:-treeverse/lakefs:latest}
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        if [ -n "$$(find /data/metadata -mindepth 1 -print -quit 2>/dev/null)" ]; then
+          echo "lakeFS metadata already exists; keeping the configured administrator"
+          exit 0
+        fi
+        exec /app/lakefs superuser --user-name "$$LAKEFS_INIT_USER" --access-key-id "$$LAKEFS_INIT_ACCESS_KEY" --secret-access-key "$$LAKEFS_INIT_SECRET_KEY"
+    environment:
+      LAKEFS_DATABASE_TYPE: local
+      LAKEFS_DATABASE_LOCAL_PATH: /data/metadata
+      LAKEFS_BLOCKSTORE_TYPE: local
+      LAKEFS_BLOCKSTORE_LOCAL_PATH: /data/block
+      LAKEFS_AUTH_ENCRYPT_SECRET_KEY: ${LAKEFS_AUTH_ENCRYPT_SECRET_KEY}
+      LAKEFS_INIT_USER: ${LAKEFS_USER_NAME:-admin}
+      LAKEFS_INIT_ACCESS_KEY: ${LAKEFS_ACCESS_KEY_ID}
+      LAKEFS_INIT_SECRET_KEY: ${LAKEFS_SECRET_ACCESS_KEY}
+    volumes:
+      - lakefs_data:/data
+    depends_on:
+      lakefs-permissions:
+        condition: service_completed_successfully
+    networks:
+      - ai-infra
+
+  lakefs:
+    image: ${LAKEFS_IMAGE:-treeverse/lakefs:latest}
+    restart: unless-stopped
+    command: run
+    environment:
+      LAKEFS_DATABASE_TYPE: local
+      LAKEFS_DATABASE_LOCAL_PATH: /data/metadata
+      LAKEFS_BLOCKSTORE_TYPE: local
+      LAKEFS_BLOCKSTORE_LOCAL_PATH: /data/block
+      LAKEFS_AUTH_ENCRYPT_SECRET_KEY: ${LAKEFS_AUTH_ENCRYPT_SECRET_KEY}
+    ports:
+      - "${LAKEFS_PORT:-8002}:8000"
+    volumes:
+      - lakefs_data:/data
+    depends_on:
+      lakefs-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8000/_health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks:
+      - ai-infra
+    logging: *default-logging
+
+  mlflow:
+    image: ${MLFLOW_IMAGE:-ghcr.io/mlflow/mlflow:latest}
+    restart: unless-stopped
+    command:
+      - mlflow
+      - server
+      - --host
+      - 0.0.0.0
+      - --port
+      - "5000"
+      - --backend-store-uri
+      - sqlite:////mlflow/mlflow.db
+      - --artifacts-destination
+      - /mlflow/artifacts
+      - --serve-artifacts
+      - --disable-security-middleware
+    ports:
+      - "${MLFLOW_PORT:-5001}:5000"
+    volumes:
+      - mlflow_data:/mlflow
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=2)"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks:
+      - ai-infra
+    logging: *default-logging
+
+networks:
+  ai-infra:
+    name: ${NETWORK_NAME:-ai-infra-network}
+
+volumes:
+  labelling_data:
+    name: ${LABELLING_VOLUME:-ai-infra_labelling_data}
+  lakefs_data:
+    name: ${LAKEFS_VOLUME:-ai-infra_lakefs_data}
+  mlflow_data:
+    name: ${MLFLOW_VOLUME:-ai-infra_mlflow_data}

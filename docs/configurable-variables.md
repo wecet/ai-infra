@@ -1,27 +1,15 @@
-# Configurable variables
+# Environment variables
 
-Every active profile must supply the variables referenced by `services/`. Deployment Manager resolves `~~ENV:NAME~~` markers in service definitions. Do not put these markers in `deployment.yaml`.
+Docker Compose loads the repository-root `.env`. The committed `.env.example` documents every supported value.
 
-| Variable | Purpose / default |
+| Group | Variables |
 | --- | --- |
-| `HOST_APP` | Deployment Manager Docker host key; `<default>` locally, SSH URL remotely |
-| `DEPLOYED_CONFIG_PATH` | Absolute manager-managed configuration directory; required for non-dev profiles |
-| `DISABLED_SERVICES` | Manager service filtering; empty enables all services |
-| `NETWORK_NAME` | Manager bridge network name; default `ai-infra-network` |
-| `MLFLOW_IMAGE` | Tracking image, initially `ghcr.io/mlflow/mlflow:latest` |
-| `LAKEFS_IMAGE` | Versioning image, initially `treeverse/lakefs:latest` |
-| `LABELLING_IMAGE` | Built/published labeller image; local default `ai-infra/labelling:dev` |
-| `LAKEFS_AUTH_ENCRYPT_SECRET_KEY` | lakeFS encryption secret; replace development value and preserve for existing installations |
-| `LABELLING_PORT` | Published labeller port, `8080` (container port stays 8080) |
-| `MLFLOW_PORT` | Published tracking port, `5001` (container port stays 5000) |
-| `LAKEFS_PORT` | Published lakeFS port, `8002` (container port stays 8000) |
-| `LAKEFS_VOLUME` | Physical Docker volume name, `ai-infra_lakefs_data` |
-| `LABELLING_VOLUME` | Physical Docker volume name, `ai-infra_labelling_data` |
-| `LOG_MAX_SIZE` | Manager JSON log rotation size, `10m` |
-| `LOG_MAX_FILE` | Manager retained log-file count, `3` |
+| Images | `LABELLING_IMAGE`, `LAKEFS_IMAGE`, `MLFLOW_IMAGE` |
+| Published ports | `LABELLING_PORT`, `LAKEFS_PORT`, `MLFLOW_PORT` |
+| Storage | `LABELLING_VOLUME`, `LAKEFS_VOLUME`, `MLFLOW_VOLUME` |
+| lakeFS identity | `LAKEFS_USER_NAME`, `LAKEFS_ACCESS_KEY_ID`, `LAKEFS_SECRET_ACCESS_KEY`, `LAKEFS_AUTH_ENCRYPT_SECRET_KEY` |
+| lakeFS publishing | `LAKEFS_REPOSITORY`, `LAKEFS_BRANCH`, `LAKEFS_STORAGE_NAMESPACE` |
+| AI assistance | `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL`, `OPENAI_TIMEOUT_SECONDS`, `OPENAI_MAX_OUTPUT_TOKENS`, `OPENAI_IMAGE_DETAIL`, `OPENAI_PROJECT`, `OPENAI_ORGANIZATION`, `OPENAI_REASONING_EFFORT` |
+| Operations | `COMPOSE_PROJECT_NAME`, `NETWORK_NAME`, `LOG_MAX_SIZE`, `LOG_MAX_FILE` |
 
-Access each application at `http://localhost:PORT`, or use the Docker server IP remotely. Use distinct published ports in the range 1–65535.
-
-The labeller's `LABELLING_DATA_DIR=/data`, lakeFS local storage settings, and MLflow command are defined in service YAML. The ignored `lakefs.env` supplies `LAKEFS_ENDPOINT`, `LAKEFS_ACCESS_KEY_ID`, `LAKEFS_SECRET_ACCESS_KEY`, `LAKEFS_REPOSITORY`, `LAKEFS_BRANCH`, and `LAKEFS_STORAGE_NAMESPACE` for pushing published snapshots. The labeller volume holds SQLite, active images, deleted-image archives, and copied images for immutable published versions. For native development, override `LABELLING_DATA_DIR` with a writable local path. See [the labeller guide](../src/labelling/README.md).
-
-When adding a setting, update every profile/template, the relevant service definition, and this table together. Keep private plaintext credentials out of Git; production profiles should be encrypted with your own SOPS policy.
+Keep `.env` private. Preserve the lakeFS encryption key and credentials when reusing an existing lakeFS volume. Leave `OPENAI_API_KEY` empty when AI assistance is not required.

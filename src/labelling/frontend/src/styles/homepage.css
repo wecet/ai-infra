@@ -10,7 +10,7 @@
   text-align: left;
   min-width: 0;
   border-radius: 8px;
-  box-shadow: 0 3px 9px #1628180b;
+  box-shadow: 0 3px 9px #1e3a8a0b;
   font-weight: 400;
   cursor: grab;
   transform-origin: center;
@@ -20,15 +20,15 @@
 .project-card.dragging {
   opacity: 0.55;
   transform: rotate(1.5deg) scale(0.97);
-  border-color: #7ca77d;
-  background: #eef6eb;
-  box-shadow: 0 10px 24px #214d2830;
+  border-color: #60a5fa;
+  background: #eff6ff;
+  box-shadow: 0 10px 24px #1d4ed830;
 }
 .project-card.absorbing {
   z-index: 1;
   border-color: var(--accent);
-  background: #e8f3e5;
-  box-shadow: 0 0 0 4px #75a96f30, 0 12px 30px #214d2833;
+  background: #dbeafe;
+  box-shadow: 0 0 0 4px #3b82f630, 0 12px 30px #1d4ed833;
   animation: absorb-project 1200ms ease-in-out infinite;
 }
 .project-card.absorbing .project-type-icon { transform: scale(1.07); }
@@ -42,14 +42,14 @@
   width: 4px;
   border-radius: 3px;
   background: var(--accent);
-  box-shadow: 0 0 0 3px #75a96f26;
+  box-shadow: 0 0 0 3px #3b82f626;
 }
 .project-card.reorder-before::before { left: -8px; }
 .project-card.reorder-after::before { right: -8px; }
 .project-card.reorder-before,
 .project-card.reorder-after {
-  border-color: #7ca77d;
-  background: #f2f8f0;
+  border-color: #60a5fa;
+  background: #f8fafc;
 }
 .project-card.absorbing::after {
   content: "Release to merge";
@@ -86,10 +86,10 @@
   font-size: 21px;
   font-weight: 700;
 }
-.project-card-detection { border-color: #b8cdb7; background: #fbfdf9; }
-.project-card-detection .project-type-icon { color: #27692b; background: #e5f1e2; }
-.project-card-classification { border-color: #b8c9c4; background: #fbfdfc; }
-.project-card-classification .project-type-icon { color: #23635b; background: #e2f0ec; }
+.project-card-detection { border-color: #bfdbfe; background: #fbfdf9; }
+.project-card-detection .project-type-icon { color: #1d4ed8; background: #e0edff; }
+.project-card-classification { border-color: #fde68a; background: #fbfdfc; }
+.project-card-classification .project-type-icon { color: #2563eb; background: #fff7cc; }
 .project-type-label {
   color: var(--muted);
   font-size: 9px;

@@ -1,41 +1,77 @@
 # AI Infrastructure
 
-A self-hosted MLflow, lakeFS, and image labelling stack deployed through Deployment Manager.
+A self-hosted Docker Compose stack containing:
 
-The labeller supports object detection, multi-label image classification, optional AI-generated box suggestions, validated importable project ZIPs, drag-to-merge projects, managed classes, immutable published versions, LakeFS snapshot publishing, searchable annotations, bulk review, auditable image additions, restorable deletions, automated dataset quality checks, project settings, near-duplicate analysis, and timestamped project comments. Its Dashboard displays the project description and exports separate import-compatible train and test archives, skipping empty splits. Configure the ignored `gpt.env` for AI assistance and `lakefs.env` for the existing LakeFS service. See the [labelling guide](src/labelling/README.md).
+- **Labelling Studio** — image classification and object-detection annotation
+- **lakeFS** — versioned dataset storage used by published labelling snapshots
+- **MLflow** — experiment and artifact tracking
 
-## Repository layout
+The labeller supports project ZIP import/export, managed classes, AI-assisted box suggestions, review workflows, immutable versions, lakeFS publishing, dataset quality checks, deletion recovery, comments, and train/test exports. See the [labelling guide](src/labelling/README.md) for the complete workflow.
 
-```text
-deployment.yaml             Deployment Manager V1 manifest
-profiles/                   Deployment environment settings
-services/ai-infra/          One Deployment Manager definition per service
-src/labelling/              Labeller Dockerfile, React UI, FastAPI API, tests
-docs/                       Deployment, configuration, and migration guides
+## Quick start
+
+Docker with the Compose plugin is the only deployment prerequisite.
+
+```bash
+cp .env.example .env
+# Review .env and replace the lakeFS secrets before using this outside local development.
+docker compose up --build -d
+docker compose ps
 ```
 
-## Deployment
+This checkout already has a local `.env` with development credentials. The file is intentionally ignored by Git; `.env.example` is the committed template.
 
-Open this repository in Deployment Manager and select the appropriate profile. Use `dev` for the manager's default local Docker host, or `local_server.nolock` for the configured remote host. Review the rendered desired state and reconciliation plan, then deploy.
+Open the services at:
 
-Access the deployed services directly:
+| Service | Default URL |
+| --- | --- |
+| Labelling Studio | http://localhost:8081 |
+| lakeFS | http://localhost:8002 |
+| MLflow | http://localhost:5001 |
 
-| Service | Default URL | Profile variable |
-| --- | --- | --- |
-| Labelling | http://localhost:8080 | `LABELLING_PORT` |
-| MLflow | http://localhost:5001 | `MLFLOW_PORT` |
-| lakeFS | http://localhost:8002 | `LAKEFS_PORT` |
+The labeller uses host port `8081` because `8080` was already occupied on the machine where this stack was configured. Change `LABELLING_PORT`, `LAKEFS_PORT`, or `MLFLOW_PORT` in `.env` if a port is unavailable, then recreate the services with `docker compose up -d`.
 
-Change the ports in the selected profile and redeploy. For a remote Docker host, replace `localhost` with the server IP. The manager reads `deployment.yaml`, `profiles/`, and `services/`; application images must already be available to the target Docker host.
+lakeFS is initialized automatically from the `LAKEFS_*` values in `.env`. Log in with `LAKEFS_ACCESS_KEY_ID` and `LAKEFS_SECRET_ACCESS_KEY`. The `datasets` repository is created automatically the first time a labelling version is pushed. MLflow stores both its SQLite database and artifacts in a named volume.
 
-- [Deployment and image publishing](docs/deployment.md)
-- [Profile variables](docs/configurable-variables.md)
-- [Migration and persistence](docs/migration.md)
-- [Labelling workflow and development](src/labelling/README.md)
-- [lakeFS CLI examples](docs/lakefs-commands.md)
+## Configuration
 
-The stack uses lakeFS local storage. MLflow retains its existing default storage behavior; its container filesystem has no persistent volume. See the migration guide before replacing containers with valuable tracking data.
+All runtime settings are in `.env`:
 
-The services retain their existing trusted-network deployment model: the labeller has no authentication and MLflow runs with security middleware disabled. Production profiles require appropriate network/access controls.
+- Image tags, published ports, Docker network, log rotation, and named-volume names
+- lakeFS encryption, login credentials, repository, branch, and local namespace
+- Optional OpenAI Responses API settings for AI-assisted labelling
+
+Leave `OPENAI_API_KEY` empty to use manual labelling only. Do not commit `.env`. Replace all sample secrets before exposing the services to another machine.
+
+## Common commands
+
+```bash
+docker compose up --build -d       # build and start everything
+docker compose ps                  # check service health
+docker compose logs -f             # follow all logs
+docker compose down                # stop containers, preserve data
+docker compose pull                # refresh upstream lakeFS/MLflow images
+```
+
+Do not use `docker compose down -v` unless you intend to delete all labelling, lakeFS, and MLflow data.
+
+## Persistence and migration
+
+The stack deliberately uses the historic `ai-infra_labelling_data` and `ai-infra_lakefs_data` volume names so an older local installation can retain its data. MLflow now persists in `ai-infra_mlflow_data`.
+
+Before migrating an existing installation, inspect and back up its volumes. Stop the old stack without `-v`, confirm the volume names in `.env`, and then start this Compose stack. Keep `LAKEFS_AUTH_ENCRYPT_SECRET_KEY` and the lakeFS credentials stable for an existing lakeFS volume.
+
+The services are intended for a trusted network: the labeller has no login and MLflow runs with its security middleware disabled. Add a secured reverse proxy or equivalent access control before public exposure.
+
+## Verification
+
+```bash
+docker compose config --quiet
+curl --fail http://localhost:8081/api/health
+curl --fail http://localhost:8002/_health
+curl --fail http://localhost:5001/health
+```
+
+Backend and frontend development instructions are in [src/labelling/README.md](src/labelling/README.md).
 
 See [LICENSE](LICENSE).

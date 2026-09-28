@@ -33,6 +33,7 @@ __pycache__/
 **/venv/
 **/.venv/
 .env
+!.env.example
 
 # So files (Will be generated upon package generation)
 *.so
@@ -48,7 +49,3 @@ build/
 node_modules/
 .pytest_cache/
 src/labelling/data/
-
-# Private plaintext profiles
-profiles/*.local.env
-profiles/prod.nolock.env

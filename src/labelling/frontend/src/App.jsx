@@ -133,7 +133,7 @@ function App() {
             }
           }}
         >
-          <span className="brand-wordmark">OPENIIOT</span>
+          <span className="brand-mark" aria-hidden="true">LS</span>
           <span>Labelling Studio</span>
         </a>
         <span className="tag">IMAGE ANNOTATION</span>
@@ -368,10 +368,9 @@ function App() {
       {mergeError && <div className="modal-backdrop"><div className="panel ai-dialog" role="alertdialog"
         aria-modal="true" aria-labelledby="merge-error-title"><h2 id="merge-error-title">{mergeError}</h2>
         <button className="primary" autoFocus onClick={() => setMergeError("")}>OK</button></div></div>}
-      <footer className="app-footer">OpenIIoT · Labelling Studio</footer>
+      <footer className="app-footer">Labelling Studio · Image annotation workspace</footer>
     </div>
   );
 }
 
 export default App;
-

@@ -1,16 +1,18 @@
 :root {
   font-family: Arial, Helvetica, sans-serif;
-  color: #142337;
-  background: #f3f6f1;
+  color: #172033;
+  background: #f5f7fb;
   font-synthesis: none;
   font-size: 12px;
   color-scheme: light;
-  --accent: #2b702e;
-  --muted: #647184;
-  --line: #bfc6bf;
+  --accent: #2563eb;
+  --accent-dark: #1d4ed8;
+  --highlight: #facc15;
+  --muted: #64748b;
+  --line: #d8e0ec;
   --panel: #fff;
   --danger: #a1281b;
-  --amber: #a66a18;
+  --amber: #a16207;
 }
 * {
   box-sizing: border-box;
@@ -53,8 +55,8 @@ label.checkbox-label input[type="checkbox"] {
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 6px;
-  background: #f6f8f5;
-  color: #19341d;
+  background: #f8fafc;
+  color: #172033;
   font: 12px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace;
   overflow: auto;
 }
@@ -76,14 +78,14 @@ button,
   border-radius: 5px;
   padding: 7px 10px;
   background: #fff;
-  color: #142337;
+  color: #172033;
   font-weight: 600;
   cursor: pointer;
   min-height: 32px;
 }
 button:hover,
 .button:hover {
-  background: #edf3e9;
+  background: #eff6ff;
 }
 button:disabled,
 .disabled {
@@ -95,7 +97,7 @@ a:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: 2px solid #2c7530;
+  outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
 .primary {
@@ -104,7 +106,7 @@ textarea:focus-visible {
   border-color: var(--accent);
 }
 .primary:hover {
-  background: #225c25;
+  background: var(--accent-dark);
 }
 .danger {
   color: #a1281b;
@@ -135,29 +137,36 @@ textarea:focus-visible {
   justify-content: space-between;
   gap: 12px;
   background: #fff;
-  border-bottom: 1px solid #dce1da;
+  border-bottom: 1px solid var(--line);
 }
 .brand {
   display: flex;
   gap: 10px;
   align-items: center;
-  color: #18351c;
+  color: #172033;
   text-decoration: none;
   font-weight: 700;
   font-size: 14px;
 }
-.brand-wordmark {
-  color: #306c33;
-  font-size: 9px;
-  letter-spacing: 1.7px;
+.brand-mark {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  box-shadow: 3px 3px 0 var(--highlight);
 }
 .tag {
   font-size: 9px;
   letter-spacing: 0.7px;
   font-weight: 600;
-  border: 1px solid #bbcec3;
+  border: 1px solid #bfdbfe;
   border-radius: 4px;
-  color: #3d6150;
+  color: #1e40af;
   padding: 4px 7px;
   white-space: nowrap;
 }
@@ -167,8 +176,8 @@ textarea:focus-visible {
   display: flex;
   gap: 12px;
   align-items: center;
-  background: linear-gradient(105deg, #28672c 0%, #37843a 65%, #80bb57 100%);
-  box-shadow: 0 3px 8px #22392215;
+  background: linear-gradient(105deg, #1d4ed8 0%, #2563eb 70%, #3b82f6 100%);
+  box-shadow: 0 3px 12px #1d4ed81f;
 }
 .workspace-selector {
   display: flex;
@@ -190,7 +199,7 @@ textarea:focus-visible {
   font-size: 11px;
 }
 .workspace-summary {
-  color: #eef7e9;
+  color: #eff6ff;
   font-size: 11px;
 }
 .workspace-actions {
@@ -214,7 +223,7 @@ textarea:focus-visible {
 }
 .workspace-actions button.active {
   background: #fff;
-  color: #28572b;
+  color: #1d4ed8;
 }
 main {
   flex: 1;
@@ -241,7 +250,7 @@ main {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 12px;
-  box-shadow: 0 3px 9px #1628180b;
+  box-shadow: 0 3px 9px #1e3a8a0b;
 }
 .eyebrow {
   font-size: 10px;

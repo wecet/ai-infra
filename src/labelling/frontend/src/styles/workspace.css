@@ -3,7 +3,7 @@
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 16px;
-  box-shadow: 0 3px 9px #1628180b;
+  box-shadow: 0 3px 9px #1e3a8a0b;
 }
 .create-form {
   width: 650px;
@@ -74,10 +74,10 @@ label > input:not([type="file"]) {
   border-radius: 8px;
   background-color: #fff;
   background-image:
-    linear-gradient(#e8ede866 1px, transparent 1px),
-    linear-gradient(90deg, #e8ede866 1px, transparent 1px);
+    linear-gradient(#dbeafe66 1px, transparent 1px),
+    linear-gradient(90deg, #dbeafe66 1px, transparent 1px);
   background-size: 22px 22px;
-  box-shadow: 0 3px 9px #1628180b;
+  box-shadow: 0 3px 9px #1e3a8a0b;
 }
 .empty p {
   color: var(--muted);
@@ -115,15 +115,15 @@ label > input:not([type="file"]) {
 .tabs button {
   border-color: transparent;
   background: none;
-  color: #435045;
+  color: #475569;
   padding: 6px 12px;
   font-size: 11px;
   min-width: 86px;
 }
 .tabs button.selected {
-  background: #edf4e8;
-  border-color: #aec7a5;
-  color: #245d28;
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #1d4ed8;
 }
 .tabs > span {
   margin-left: auto;
@@ -133,12 +133,12 @@ label > input:not([type="file"]) {
 }
 .notice,
 .alert {
-  border: 1px solid #b7ceaf;
+  border: 1px solid #bfdbfe;
   padding: 10px 12px;
   margin-bottom: 12px;
   border-radius: 6px;
-  background: #eff6ea;
-  color: #335c29;
+  background: #eff6ff;
+  color: #1e40af;
   font-size: 12px;
   overflow-wrap: anywhere;
 }
@@ -158,11 +158,11 @@ label > input:not([type="file"]) {
   border-radius: 8px;
   overflow: hidden;
   background: #fff;
-  box-shadow: 0 3px 9px #1628180b;
+  box-shadow: 0 3px 9px #1e3a8a0b;
 }
 .canvas-panel {
   min-width: 0;
-  background: #f6f8f5;
+  background: #f8fafc;
   display: flex;
   flex-direction: column;
 }
@@ -204,10 +204,10 @@ label > input:not([type="file"]) {
   min-height: 320px;
   max-height: 65vh;
   flex: 1;
-  background-color: #f2f5f0;
+  background-color: #f1f5f9;
   background-image:
-    linear-gradient(#dde5dc88 1px, transparent 1px),
-    linear-gradient(90deg, #dde5dc88 1px, transparent 1px);
+    linear-gradient(#dbeafe88 1px, transparent 1px),
+    linear-gradient(90deg, #dbeafe88 1px, transparent 1px);
   background-size: 22px 22px;
 }
 .image-surface {
@@ -312,8 +312,8 @@ label > input:not([type="file"]) {
   margin-left: auto;
 }
 .chosen {
-  background: #edf4e8 !important;
-  border-color: #abc39f !important;
+  background: #eff6ff !important;
+  border-color: #93c5fd !important;
 }
 .objects {
   flex: 1;
