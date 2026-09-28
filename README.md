@@ -55,6 +55,10 @@ docker compose pull                # refresh upstream lakeFS/MLflow images
 
 Do not use `docker compose down -v` unless you intend to delete all labelling, lakeFS, and MLflow data.
 
+## Releases and GitHub Packages
+
+Pushing a semantic version tag such as `v1.0.0`, or manually running **Publish labeller release** with a version, publishes a multi-platform labeller image to `ghcr.io/wecet/ai-infra/labelling`. The workflow also creates a GitHub Release containing a Linux AMD64 OCI image archive and the Compose/environment templates. It uses the repository-provided `GITHUB_TOKEN`; no additional publishing secrets are required.
+
 ## Persistence and migration
 
 The stack deliberately uses the historic `ai-infra_labelling_data` and `ai-infra_lakefs_data` volume names so an older local installation can retain its data. MLflow now persists in `ai-infra_mlflow_data`.
