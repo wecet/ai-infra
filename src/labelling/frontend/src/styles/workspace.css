@@ -3,7 +3,7 @@
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 16px;
-  box-shadow: 0 3px 9px #1e3a8a0b;
+  box-shadow: 0 3px 9px #3036400b;
 }
 .create-form {
   width: 650px;
@@ -74,10 +74,10 @@ label > input:not([type="file"]) {
   border-radius: 8px;
   background-color: #fff;
   background-image:
-    linear-gradient(#dbeafe66 1px, transparent 1px),
-    linear-gradient(90deg, #dbeafe66 1px, transparent 1px);
+    linear-gradient(#f9ddd566 1px, transparent 1px),
+    linear-gradient(90deg, #f9ddd566 1px, transparent 1px);
   background-size: 22px 22px;
-  box-shadow: 0 3px 9px #1e3a8a0b;
+  box-shadow: 0 3px 9px #3036400b;
 }
 .empty p {
   color: var(--muted);
@@ -121,9 +121,9 @@ label > input:not([type="file"]) {
   min-width: 86px;
 }
 .tabs button.selected {
-  background: #eff6ff;
-  border-color: #93c5fd;
-  color: #1d4ed8;
+  background: #fff0eb;
+  border-color: #eaa08d;
+  color: #c9583e;
 }
 .tabs > span {
   margin-left: auto;
@@ -133,12 +133,12 @@ label > input:not([type="file"]) {
 }
 .notice,
 .alert {
-  border: 1px solid #bfdbfe;
+  border: 1px solid #f0b8aa;
   padding: 10px 12px;
   margin-bottom: 12px;
   border-radius: 6px;
-  background: #eff6ff;
-  color: #1e40af;
+  background: #fff0eb;
+  color: #a94731;
   font-size: 12px;
   overflow-wrap: anywhere;
 }
@@ -158,7 +158,7 @@ label > input:not([type="file"]) {
   border-radius: 8px;
   overflow: hidden;
   background: #fff;
-  box-shadow: 0 3px 9px #1e3a8a0b;
+  box-shadow: 0 3px 9px #3036400b;
 }
 .canvas-panel {
   min-width: 0;
@@ -206,8 +206,8 @@ label > input:not([type="file"]) {
   flex: 1;
   background-color: #f1f5f9;
   background-image:
-    linear-gradient(#dbeafe88 1px, transparent 1px),
-    linear-gradient(90deg, #dbeafe88 1px, transparent 1px);
+    linear-gradient(#f9ddd588 1px, transparent 1px),
+    linear-gradient(90deg, #f9ddd588 1px, transparent 1px);
   background-size: 22px 22px;
 }
 .image-surface {
@@ -312,8 +312,8 @@ label > input:not([type="file"]) {
   margin-left: auto;
 }
 .chosen {
-  background: #eff6ff !important;
-  border-color: #93c5fd !important;
+  background: #fff0eb !important;
+  border-color: #eaa08d !important;
 }
 .objects {
   flex: 1;

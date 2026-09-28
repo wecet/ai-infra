@@ -5,9 +5,9 @@
   font-synthesis: none;
   font-size: 12px;
   color-scheme: light;
-  --accent: #2563eb;
-  --accent-dark: #1d4ed8;
-  --highlight: #facc15;
+  --accent: #e76f51;
+  --accent-dark: #c9583e;
+  --highlight: #424854;
   --muted: #64748b;
   --line: #d8e0ec;
   --panel: #fff;
@@ -85,7 +85,7 @@ button,
 }
 button:hover,
 .button:hover {
-  background: #eff6ff;
+  background: #fff0eb;
 }
 button:disabled,
 .disabled {
@@ -164,9 +164,9 @@ textarea:focus-visible {
   font-size: 9px;
   letter-spacing: 0.7px;
   font-weight: 600;
-  border: 1px solid #bfdbfe;
+  border: 1px solid #f0b8aa;
   border-radius: 4px;
-  color: #1e40af;
+  color: #a94731;
   padding: 4px 7px;
   white-space: nowrap;
 }
@@ -176,8 +176,8 @@ textarea:focus-visible {
   display: flex;
   gap: 12px;
   align-items: center;
-  background: linear-gradient(105deg, #1d4ed8 0%, #2563eb 70%, #3b82f6 100%);
-  box-shadow: 0 3px 12px #1d4ed81f;
+  background: linear-gradient(105deg, #c9583e 0%, #e76f51 70%, #ef8a70 100%);
+  box-shadow: 0 3px 12px #c9583e1f;
 }
 .workspace-selector {
   display: flex;
@@ -199,7 +199,7 @@ textarea:focus-visible {
   font-size: 11px;
 }
 .workspace-summary {
-  color: #eff6ff;
+  color: #fff0eb;
   font-size: 11px;
 }
 .workspace-actions {
@@ -223,7 +223,7 @@ textarea:focus-visible {
 }
 .workspace-actions button.active {
   background: #fff;
-  color: #1d4ed8;
+  color: #c9583e;
 }
 main {
   flex: 1;
@@ -250,7 +250,7 @@ main {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 12px;
-  box-shadow: 0 3px 9px #1e3a8a0b;
+  box-shadow: 0 3px 9px #3036400b;
 }
 .eyebrow {
   font-size: 10px;

@@ -133,10 +133,13 @@ function App() {
             }
           }}
         >
-          <span className="brand-mark" aria-hidden="true">LS</span>
-          <span>Labelling Studio</span>
+          <span className="brand-mark" aria-hidden="true">L</span>
+          <span className="brand-copy">
+            <strong>Labelling Studio</strong>
+            <small>Dataset workspace</small>
+          </span>
         </a>
-        <span className="tag">IMAGE ANNOTATION</span>
+        <span className="tag masthead-status"><span className="status-dot" />Workspace ready</span>
       </header>
       <nav className="workspace-bar" aria-label="Workspace navigation">
         <label className="workspace-selector">
@@ -215,19 +218,19 @@ function App() {
           <div className="page">
             <div className="page-heading">
               <div>
-                <h1>Projects</h1>
+                <div className="page-kicker">Dataset repository</div>
+                <h1>Annotation projects</h1>
                 <p className="muted">
-                  Create and manage image annotation projects. Progress is saved
-                  automatically. Drag card edges to reorder, or drop onto a card centre to merge.
+                  Build, review, and publish versioned image datasets. Your work saves automatically.
                 </p>
               </div>
               <div className="homepage-actions">
                 <label className={`button ${importingProject ? "disabled" : ""}`}>
-                  {importingProject ? "Importing project…" : "↑ Import Project"}
+                  {importingProject ? "Importing…" : "Import ZIP"}
                   <input type="file" accept=".zip" hidden disabled={importingProject} onChange={chooseImportProject} />
                 </label>
                 <button className="primary" disabled={importingProject} onClick={() => setCreating(true)}>
-                  ＋ New project
+                  New project
                 </button>
               </div>
             </div>
@@ -292,7 +295,7 @@ function App() {
                       {p.total ? Math.round((p.completed / p.total) * 100) : 0}%
                       complete
                     </span>
-                    <span>Open project ↗</span>
+                    <span>Open project <span aria-hidden="true">→</span></span>
                   </div>
                 </button>
               ))}
