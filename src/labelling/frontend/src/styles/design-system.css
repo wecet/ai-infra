@@ -375,6 +375,20 @@ h2 { font-size: 15px; letter-spacing: -.15px; }
 [data-theme="dark"] .kpi-neutral,
 [data-theme="dark"] .kpi-attention { background: #292c32; border-color: var(--line); }
 [data-theme="dark"] .kpi-attention strong { color: #f4a08a; }
+[data-theme="dark"] .quality-issue {
+  color: #ececed;
+  background: #332f2c;
+  border-left-color: #d28a68;
+  box-shadow: inset 0 0 0 1px #51483f;
+}
+[data-theme="dark"] .quality-issue.error {
+  color: #ffe1da;
+  background: #3b2928;
+  border-left-color: var(--danger);
+  box-shadow: inset 0 0 0 1px #69403b;
+}
+[data-theme="dark"] .quality-issue p { color: #c9cbd0; }
+[data-theme="dark"] .quality-count { color: #ffab96; }
 [data-theme="dark"] .comment-form,
 [data-theme="dark"] .zip-tree { color: #e1e2e5; background: #22252a; border-color: var(--line); }
 [data-theme="dark"] .preview-image,
