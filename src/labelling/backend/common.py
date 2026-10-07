@@ -84,6 +84,13 @@ def init_db():
             sample_count INTEGER NOT NULL, snapshot TEXT NOT NULL,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(project_id,version_number));
+        CREATE TABLE IF NOT EXISTS training_jobs (
+            id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id),
+            version_id TEXT NOT NULL REFERENCES dataset_versions(id), task_type TEXT NOT NULL,
+            base_model TEXT NOT NULL, hyperparameters TEXT NOT NULL, compute_target TEXT NOT NULL,
+            status TEXT NOT NULL, metrics TEXT NOT NULL DEFAULT '{}', artifact_path TEXT,
+            mlflow_run_id TEXT, error TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, started_at TEXT, completed_at TEXT);
         ''')
         # Additive migrations preserve annotations from existing deployments.
         if 'annotation_type' not in {r['name'] for r in db.execute('PRAGMA table_info(projects)')}:
@@ -129,6 +136,7 @@ def init_db():
         db.execute('CREATE INDEX IF NOT EXISTS idx_batches_project ON import_batches(project_id)')
         db.execute('CREATE INDEX IF NOT EXISTS idx_comments_project ON project_comments(project_id,created_at)')
         db.execute('CREATE INDEX IF NOT EXISTS idx_versions_project ON dataset_versions(project_id,version_number)')
+        db.execute('CREATE INDEX IF NOT EXISTS idx_training_jobs_project ON training_jobs(project_id,created_at)')
         # Existing deployments become version 1 without altering any image data.
         for project in db.execute('SELECT id,created_at FROM projects').fetchall():
             batch = db.execute('SELECT id FROM import_batches WHERE project_id=? ORDER BY rowid LIMIT 1',
