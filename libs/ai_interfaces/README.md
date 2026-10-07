@@ -8,10 +8,17 @@ this package in each ML repository that you want the training platform to discov
 Install the current feature branch while developing:
 
 ```bash
-pip install "ai-infra-interfaces @ git+https://github.com/wecet/ai-infra.git@feature/model-training-workspace#subdirectory=libs/ai_interfaces"
+pip install "ai-infra-interfaces @ git+https://github.com/wecet/ai-infra.git@ai-interfaces-v0.2.1#subdirectory=libs/ai_interfaces"
 ```
 
-For reproducible workbenches, replace the branch with a release tag or commit SHA.
+Or install the wheel attached to the GitHub Release:
+
+```bash
+pip install "https://github.com/wecet/ai-infra/releases/download/ai-interfaces-v0.2.1/ai_infra_interfaces-0.2.1-py3-none-any.whl"
+```
+
+Release tags and wheel assets are immutable inputs for reproducible workbenches. Avoid
+installing from a moving branch in production.
 
 ## Create a discoverable workbench
 
