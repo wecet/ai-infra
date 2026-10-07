@@ -1,8 +1,10 @@
 """Version-bound training orchestration for local and remote compute agents."""
+import base64
 import io
 import ipaddress
 import json
 import os
+import re
 import threading
 import time
 import urllib.parse
@@ -142,12 +144,15 @@ def _run(job_id):
                         "devices": [key for key in ("cpu", "gpu") if target.get(key)], **hyperparameters}
         manifest = {"job_id": job_id, "annotation_type": job["task_type"], "base_model": job["base_model"],
                     "hyperparameters": hyperparameters, "config": model_config,
-                    "devices": model_config["devices"]}
+                    "devices": model_config["devices"], "dataset_name": detail["name"]}
         response = httpx.post(f"{agent}/api/v1/train", data={"manifest": json.dumps(manifest)},
                               files={"dataset": (f"{detail['name']}.zip", archive, "application/zip")}, timeout=3600)
         response.raise_for_status(); result = response.json()
         output = DATA / "training" / job_id; output.mkdir(parents=True, exist_ok=True)
-        artifact = output / "model.json"; artifact.write_text(json.dumps(result["artifact"], indent=2))
+        artifact_data = result["artifact"]
+        filename = re.sub(r"[^A-Za-z0-9._-]+", "_", artifact_data.get("filename", "model.bin"))[:150] or "model.bin"
+        artifact = output / filename
+        artifact.write_bytes(base64.b64decode(artifact_data["content_base64"], validate=True))
         run_id = _mlflow(job, result.get("metrics", {}))
         with database() as db: db.execute("""UPDATE training_jobs SET status='succeeded',metrics=?,artifact_path=?,
             mlflow_run_id=?,completed_at=? WHERE id=?""", (json.dumps(result.get("metrics", {})), str(artifact),
@@ -185,6 +190,8 @@ def create_job(project_id: str, payload: JobCreate):
         version = db.execute("SELECT id FROM dataset_versions WHERE id=? AND project_id=?", (payload.version_id, project_id)).fetchone()
         if not version: raise HTTPException(404, "Published version not found")
         installed = {item["key"] for item in caps.get("models", {}).get(project["annotation_type"], [])}
+        installed.update(item["key"] for item in caps.get("workbenches", [])
+                         if item.get("available") and item.get("task") == project["annotation_type"])
         if payload.base_model not in installed: raise HTTPException(422, "Selected model is not installed on this compute agent")
         if target["gpu"] and not caps["gpu"]["available"]: raise HTTPException(422, caps["gpu"].get("reason", "GPU unavailable"))
         job_id = uuid.uuid4().hex
@@ -200,4 +207,5 @@ def create_job(project_id: str, payload: JobCreate):
 def artifact(project_id: str, job_id: str):
     with database() as db: row = db.execute("SELECT artifact_path FROM training_jobs WHERE id=? AND project_id=?", (job_id, project_id)).fetchone()
     if not row or not row["artifact_path"] or not Path(row["artifact_path"]).is_file(): raise HTTPException(404, "Model artifact is unavailable")
-    return FileResponse(row["artifact_path"], filename=f"model-{job_id[:8]}.json", media_type="application/json")
+    path = Path(row["artifact_path"])
+    return FileResponse(path, filename=f"{job_id[:8]}-{path.name}")
