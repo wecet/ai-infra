@@ -7,6 +7,8 @@ import Versions from "./Versions";
 import Editor from "./Editor";
 import Dashboard from "./Dashboard";
 import Training from "./Training";
+import Lineage from "./Lineage";
+import VersionComparison from "./VersionComparison";
 
 function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
   const [tab, setTab] = useState("annotate");
@@ -21,6 +23,7 @@ function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
   const [aiValidating, setAiValidating] = useState(false);
   const [aiError, setAiError] = useState("");
   const [reviewImages, setReviewImages] = useState(null);
+  const [selectedVersion, setSelectedVersion] = useState("");
   const classification = project.annotation_type === "image_classification";
   const aiAttempts = useRef(new Set());
   async function toggleAI(e) {
@@ -208,6 +211,14 @@ function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
           onClick={() => setTab("training")}>
           ◉ Training
         </button>
+        <button disabled={locked} className={tab === "lineage" ? "selected" : ""}
+          onClick={() => setTab("lineage")}>
+          ⎇ Lineage
+        </button>
+        <button disabled={locked} className={tab === "compare" ? "selected" : ""}
+          onClick={() => setTab("compare")}>
+          ⇄ Compare
+        </button>
         <span>
           {images.filter((i) => i.completed).length} / {images.length} complete
         </span>
@@ -250,9 +261,13 @@ function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
       ) : tab === "settings" ? (
         <Settings project={project} onUpdated={onUpdated} />
       ) : tab === "versions" ? (
-        <Versions project={project} />
+        <Versions project={project} initialVersion={selectedVersion} />
       ) : tab === "training" ? (
         <Training project={project} />
+      ) : tab === "lineage" ? (
+        <Lineage project={project} onNavigate={(nextTab, id) => { if (nextTab === "versions") setSelectedVersion(id || ""); setTab(nextTab); }} />
+      ) : tab === "compare" ? (
+        <VersionComparison project={project} />
       ) : tab === "history" ? (
         <History project={project} onRestored={() => refresh()}
           onView={(list) => { setReviewImages(list); setTab("review"); }} />

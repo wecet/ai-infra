@@ -7,7 +7,7 @@ A self-hosted Docker Compose stack containing:
 - **MLflow** - experiment and artifact tracking
 - **Training agent** - CPU/GPU model execution, deployable locally or on a remote host
 
-The labeller supports project ZIP import/export, managed classes, AI-assisted box suggestions, review workflows, immutable versions, lakeFS publishing, dataset quality checks, deletion recovery, comments, train/test exports, and version-bound training jobs. See the [labelling guide](src/labelling/README.md) for the complete workflow.
+The labeller supports project ZIP import/export, managed classes, AI-assisted box suggestions, review workflows, immutable versions, lakeFS publishing, dataset lineage, version comparison, dataset quality checks, deletion recovery, comments, train/test exports, and version-bound training jobs. See the [labelling guide](src/labelling/README.md) for the complete workflow.
 
 ## Quick start
 
@@ -40,6 +40,8 @@ lakeFS is initialized automatically from the `LAKEFS_*` values in `.env`. Log in
 Publish an immutable dataset from the Dashboard, then open the project's **Training** tab. Choose the version, installed base model, hyperparameters, and compute target. For remote compute, run the training-agent image on another machine, expose port `8090`, enter its IP and port, and test the connection before starting the job.
 
 The bundled models are lightweight baseline trainers: a colour-centroid classifier and a class box-prior detector. They exercise the complete job, artifact, and MLflow path without downloading a heavyweight framework. Production PyTorch, TensorFlow, or ONNX packages plug into the public contracts in [`libs/ai_interfaces`](libs/ai_interfaces/README.md).
+
+The project **Lineage** tab traces imports, deletion/restoration events, published versions, lakeFS commits, training runs, registered models, and deployments. The **Compare** tab audits any two published versions, including membership, annotations, classes, deterministic train/test assignment, review status, quality metrics, duplicates, and split leakage.
 
 Install those contracts in another workspace from a release tag:
 

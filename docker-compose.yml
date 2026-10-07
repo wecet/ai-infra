@@ -23,6 +23,7 @@ services:
       LAKEFS_REPOSITORY: ${LAKEFS_REPOSITORY:-datasets}
       LAKEFS_BRANCH: ${LAKEFS_BRANCH:-main}
       LAKEFS_STORAGE_NAMESPACE: ${LAKEFS_STORAGE_NAMESPACE:-local://datasets}
+      LAKEFS_PUBLIC_URL: http://localhost:${LAKEFS_PORT:-8002}
       TRAINING_AGENT_URL: http://training-agent:8090
       MLFLOW_TRACKING_URI: http://mlflow:5000
       MLFLOW_PUBLIC_URL: http://localhost:${MLFLOW_PORT:-5001}
