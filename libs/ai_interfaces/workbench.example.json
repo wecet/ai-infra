@@ -1,0 +1,3 @@
+{
+  "entrypoint": "ai_workbench.py:MODEL_CLASS"
+}
