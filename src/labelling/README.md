@@ -1,5 +1,9 @@
 # Labelling Studio
 
+The Training tab starts jobs only from immutable published versions. It supports the bundled local CPU/GPU compute agent or a remote agent addressed by IP, exposes model hyperparameters, downloads completed artifacts, and links tracked runs to MLflow. GPU selection remains disabled until the selected agent reports a usable runtime.
+
+Model implementations must use the ABCs in [`../../libs/ai_interfaces`](../../libs/ai_interfaces/README.md), keeping classification and object-detection packages compatible with the same job runner.
+
 A React frontend and Python/FastAPI backend for object detection and image classification. SQLite stores project settings, classes, annotations, completion and review state, comments, and dataset history. Active images and restorable deleted-image archives live in the same `labelling_data` Docker volume.
 
 ## Run with the stack
@@ -27,8 +31,10 @@ From the repository root, run `docker compose up --build -d`, then open http://l
 6. Open **Review** for completed annotations; drafts and untouched images are excluded. Search by filename and filter by class, review state, or annotation presence. Select images and use **Approve selected** for bulk approval. Reviewers can also approve individually or reject with a required correction reason. The forwarded username and timestamp are recorded. Editing reviewed work resets it to **Ready for Review**.
 7. Open **History** to see immutable dataset membership versions: project creation, each later image batch, image deletions, and restorations. Each row shows the positive or negative sample change, resulting dataset size, and timestamp. **View images** opens Review filtered to an addition batch. Expanding a deletion shows an archived preview and **Restore image** action; restoration preserves the annotation revision history and review state and creates a positive **Images Restored** entry. Deletions made before archive support retain their source filename but cannot be restored.
 8. Open **Dashboard** to see project progress and quality metrics. **Publish** creates an immutable snapshot named `v{number}-{YYMMDD}-ready`; **Versions** lists snapshots and their frozen images. **Export ZIP** downloads any version as an import-compatible archive built entirely from its frozen images, classes, and annotations. The lakeFS icon uploads those same frozen files to the configured repository and branch, then commits them as `Saving {dataset version name} at {DD-MM-YY} by {Username}`. KPI cards use green for completed/approved work, amber for attention, and neutral styling for totals. Quality checks cover missing labels, invalid or small boxes, class balance, similar images, and split leakage. **Comments** stores timestamped progress updates.
-9. Open **Settings** to edit project metadata, instructions, and the default train percentage. Class management supports adding, renaming, recolouring, archiving/restoring, and merging classes. Merges remap current annotations and saved revisions; archived classes remain in historical data but are unavailable for new annotations.
-10. Click **Export dataset**, optionally describe the dataset, and adjust either of the linked Train/Test sliders. They always total 100%. The browser downloads two project-named archives, and each archive can be passed directly back to **Import Project**:
+9. Open **Lineage** to trace imports, deleted/restored images, published versions, lakeFS commits, training runs, registered models, and deployments. Select a node to open its history batch, frozen version, lakeFS commit, training job, or MLflow run.
+10. Open **Compare** to audit two published versions. It reports added/removed images, annotation and class edits, deterministic train/test membership changes, review-status changes, quality metric deltas, duplicates, and split leakage. Select a changed image for a side-by-side frozen annotation view.
+11. Open **Settings** to edit project metadata, instructions, and the default train percentage. Class management supports adding, renaming, recolouring, archiving/restoring, and merging classes. Merges remap current annotations and saved revisions; archived classes remain in historical data but are unavailable for new annotations.
+12. Click **Export dataset**, optionally describe the dataset, and adjust either of the linked Train/Test sliders. They always total 100%. The browser downloads two project-named archives, and each archive can be passed directly back to **Import Project**:
 
    ```text
    Project_Name_train.zip          Project_Name_test.zip
@@ -37,7 +43,7 @@ From the repository root, run `docker compose up --build -d`, then open http://l
    └── images/*.png                └── images/*.png
    ```
 
-11. While viewing any image, use **Delete image from dataset** to archive a faulty sample and remove it from the active dataset after confirmation. The deletion is recorded in History and can be restored there. Use **Delete project** in the project header to permanently remove the project, its annotations, history, comments, active images, and deleted-image archives. Project deletion asks for confirmation and cannot be undone.
+13. While viewing any image, use **Delete image from dataset** to archive a faulty sample and remove it from the active dataset after confirmation. The deletion is recorded in History and can be restored there. Use **Delete project** in the project header to permanently remove the project, its annotations, lineage, history, comments, active images, and deleted-image archives. Project deletion asks for confirmation and cannot be undone.
 
 Each JSON file is a COCO object-detection dataset with `images`, `annotations` and `categories`. Its `info` object records the optional description, project name, UTC export timestamp, split name, annotated image counts, and per-class annotation/image distribution for that split. Boxes use original normalized image pixels as `[x, y, width, height]`, with `area` and `iscrowd: 0`. Image paths point into the archive's root `images/` folder. Export includes completed images only, including completed images without objects. The train count rounds to the nearest whole image. When a small dataset or a 0/100 split leaves one side empty, that ZIP is skipped and only the non-empty split is downloaded. A fixed random seed makes the image allocation repeatable for an unchanged set of completed images. Splits are by image, without class stratification or grouping of related images.
 
@@ -85,7 +91,7 @@ Vite proxies `/api` to the Python service on port 8080. Open the local URL print
 
 ### Source layout
 
-The backend composition root is `backend/app.py`. Shared database setup, validation models, storage helpers, and image utilities live in `backend/common.py`; API endpoints are grouped under `backend/routes/` as `projects.py`, `images.py`, `versions.py`, and `datasets.py`. `backend/lakefs_client.py` handles authenticated snapshot uploads and commits.
+The backend composition root is `backend/app.py`. Shared database setup, validation models, storage helpers, and image utilities live in `backend/common.py`; API endpoints are grouped under `backend/routes/`, including `comparison.py` and `lineage.py`. `backend/lakefs_client.py` handles authenticated snapshot uploads and commits.
 
 The frontend entry point is `frontend/src/main.jsx`, with the application shell in `App.jsx`. Feature components live under `frontend/src/components/`, including dedicated modules for Dashboard, Editor, History, Review, Settings, and Versions. `style.css` only composes the focused files under `frontend/src/styles/`: base, homepage, workspace, dashboard, and responsive rules.
 
@@ -99,4 +105,4 @@ npm ci
 npm run build
 ```
 
-API tests cover persisted progress, immutable versions, class management and revision remapping, bulk review, search/filter metadata, project ordering and merging, review workflows, quality findings, AI instructions, project ZIP imports, dataset history, deletion restoration, comments, duplicate analysis, concurrency, Dashboard counts, and export/import round trips.
+API tests cover persisted progress, immutable versions, version comparison, end-to-end lineage, class management and revision remapping, bulk review, search/filter metadata, project ordering and merging, review workflows, quality findings, AI instructions, project ZIP imports, dataset history, deletion restoration, comments, duplicate analysis, concurrency, Dashboard counts, and export/import round trips.

@@ -120,6 +120,12 @@ def push_version_to_lakefs(project_id: str, version_id: str, request: Request):
                       'published_by': detail['author'], 'pushed_by': username})
     except ValueError as exc:
         raise HTTPException(502, str(exc)) from exc
+    with database() as db:
+        commit_record = uuid.uuid4().hex
+        db.execute('''INSERT INTO lakefs_commits
+            (id,project_id,version_id,commit_id,repository,branch) VALUES (?,?,?,?,?,?)''',
+            (commit_record, project_id, version_id, result.get('commit_id', ''),
+             result['repository'], result['branch']))
     return result | {'message': message, 'path': prefix}
 
 

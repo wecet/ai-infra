@@ -254,6 +254,63 @@ def test_publish_is_immutable_and_bulk_review_approves_selection(client, monkeyp
     assert client.post(f'/api/projects/{pid}/publish').json()['name'].startswith('v2-')
 
 
+def test_version_comparison_and_end_to_end_lineage(client, monkeypatch):
+    pid = project(client, 'Lineage audit')
+    first = upload(client, pid, 'first.png')
+    assert save(client, pid, first).status_code == 200
+    version_one = client.post(f'/api/projects/{pid}/publish').json()
+
+    current = client.get(f"/api/projects/{pid}/images/{first['id']}").json()
+    changed = [{'category_id': 2, 'x': 15, 'y': 10, 'width': 35, 'height': 25}]
+    assert save(client, pid, current, boxes=changed).status_code == 200
+    assert client.put(f'/api/projects/{pid}/review/bulk', json={
+        'image_ids': [first['id']], 'status': 'approved'}).status_code == 200
+    second = upload(client, pid, 'second.png', (90, 70))
+    assert save(client, pid, second, boxes=[]).status_code == 200
+    version_two = client.post(f'/api/projects/{pid}/publish').json()
+
+    compared = client.get(f'/api/projects/{pid}/versions/compare', params={
+        'left_id': version_one['id'], 'right_id': version_two['id']})
+    assert compared.status_code == 200, compared.text
+    payload = compared.json()
+    assert payload['images']['added'] == ['second.png']
+    assert payload['summary']['annotation_changes'] == 1
+    assert payload['summary']['review_changes'] == 1
+    assert payload['quality']['right']['samples'] == payload['quality']['left']['samples'] + 1
+    assert payload['images']['changed'][0]['left_boxes'] != payload['images']['changed'][0]['right_boxes']
+    assert client.get(f'/api/projects/{pid}/versions/compare', params={
+        'left_id': version_one['id'], 'right_id': version_one['id']}).status_code == 422
+
+    monkeypatch.setattr(service.versions.lakefs_client, 'push_snapshot', lambda *args: {
+        'commit_id': 'lineage123', 'repository': 'datasets', 'branch': 'main'})
+    assert client.post(f"/api/projects/{pid}/versions/{version_two['id']}/lakefs").status_code == 200
+    now = '2026-10-07 12:00:00'
+    with service.database() as db:
+        db.execute('''INSERT INTO training_jobs
+            (id,project_id,version_id,task_type,base_model,hyperparameters,compute_target,status,
+             metrics,artifact_path,mlflow_run_id,error,created_at,completed_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+            ('job-1', pid, version_two['id'], 'object_detection', 'Detector', '{}', 'local-cpu',
+             'completed', '{}', '/tmp/model', '7:run-1', '', now, now))
+        db.execute('''INSERT INTO registered_models
+            (id,project_id,training_job_id,name,model_version,mlflow_run_id,created_at)
+            VALUES (?,?,?,?,?,?,?)''', ('model-1', pid, 'job-1', 'Detector', 1, '7:run-1', now))
+        db.execute('''INSERT INTO model_deployments
+            (id,project_id,registered_model_id,name,environment,status,endpoint,created_at)
+            VALUES (?,?,?,?,?,?,?,?)''',
+            ('deployment-1', pid, 'model-1', 'Detector API', 'staging', 'healthy',
+             'https://example.test/model', now))
+
+    lineage = client.get(f'/api/projects/{pid}/lineage')
+    assert lineage.status_code == 200, lineage.text
+    graph = lineage.json()
+    assert {'batch', 'version', 'lakefs', 'training', 'model', 'deployment'} <= {
+        node['type'] for node in graph['nodes']}
+    assert graph['counts'] == {'batches': 1, 'versions': 2, 'lakefs_commits': 1,
+                               'training_runs': 1, 'registered_models': 1, 'deployments': 1}
+    assert any(edge == {'from': 'training:job-1', 'to': 'model:model-1'} for edge in graph['edges'])
+
+
 def test_ai_classification_rejected_and_no_credentials(client, monkeypatch, tmp_path):
     monkeypatch.setenv('GPT_ENV_FILE', str(tmp_path / 'missing.env'))
     result = client.post('/api/ai/validate')

@@ -131,6 +131,28 @@ label > input:not([type="file"]) {
   color: var(--muted);
   padding-right: 6px;
 }
+.project-navigation { margin-bottom: 12px; }
+.project-navigation .tabs { margin-bottom: 0; }
+.section-tabs button { min-width: 92px; }
+.project-subtabs {
+  display: flex;
+  gap: 18px;
+  min-height: 38px;
+  padding: 9px 12px 0;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--line);
+}
+.project-subtabs button {
+  flex: 0 0 auto;
+  padding: 4px 0 9px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+}
+.project-subtabs button:hover { background: transparent; color: inherit; }
+.project-subtabs button.selected { border-color: var(--accent); color: inherit; }
 .notice,
 .alert {
   border: 1px solid #f0b8aa;

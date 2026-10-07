@@ -9,12 +9,15 @@ function LakeFSIcon() {
   </svg>;
 }
 
-function Versions({ project }) {
+function Versions({ project, initialVersion = "" }) {
   const [versions, setVersions] = useState(null); const [selected, setSelected] = useState(null);
   const [error, setError] = useState("");
   const [exporting, setExporting] = useState("");
   const [pushing, setPushing] = useState(""); const [notice, setNotice] = useState("");
   useEffect(() => { api(`/projects/${project.id}/versions`).then(setVersions).catch((e) => setError(e.message)); }, [project.id]);
+  useEffect(() => {
+    if (initialVersion) api(`/projects/${project.id}/versions/${initialVersion}`).then(setSelected).catch((e) => setError(e.message));
+  }, [project.id, initialVersion]);
   async function open(item) {
     try { setSelected(await api(`/projects/${project.id}/versions/${item.id}`)); }
     catch (e) { setError(e.message); }
