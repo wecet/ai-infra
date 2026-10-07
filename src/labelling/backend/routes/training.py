@@ -154,9 +154,17 @@ def _run(job_id):
         artifact = output / filename
         artifact.write_bytes(base64.b64decode(artifact_data["content_base64"], validate=True))
         run_id = _mlflow(job, result.get("metrics", {}))
-        with database() as db: db.execute("""UPDATE training_jobs SET status='succeeded',metrics=?,artifact_path=?,
-            mlflow_run_id=?,completed_at=? WHERE id=?""", (json.dumps(result.get("metrics", {})), str(artifact),
-            run_id, datetime.now(timezone.utc).isoformat(), job_id))
+        with database() as db:
+            completed_at = datetime.now(timezone.utc).isoformat()
+            db.execute("""UPDATE training_jobs SET status='succeeded',metrics=?,artifact_path=?,
+                mlflow_run_id=?,completed_at=? WHERE id=?""", (json.dumps(result.get("metrics", {})), str(artifact),
+                run_id, completed_at, job_id))
+            model_version = db.execute('''SELECT COALESCE(MAX(model_version),0)+1 FROM registered_models
+                WHERE project_id=? AND name=?''', (job["project_id"], job["base_model"])).fetchone()[0]
+            db.execute('''INSERT INTO registered_models
+                (id,project_id,training_job_id,name,model_version,mlflow_run_id,created_at)
+                VALUES (?,?,?,?,?,?,?)''', (uuid.uuid4().hex, job["project_id"], job_id, job["base_model"],
+                                           model_version, run_id, completed_at))
     except Exception as exc:
         with database() as db: db.execute("UPDATE training_jobs SET status='failed',error=?,completed_at=? WHERE id=?",
             (str(exc)[:2000], datetime.now(timezone.utc).isoformat(), job_id))

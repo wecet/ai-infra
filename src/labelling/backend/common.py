@@ -91,6 +91,22 @@ def init_db():
             status TEXT NOT NULL, metrics TEXT NOT NULL DEFAULT '{}', artifact_path TEXT,
             mlflow_run_id TEXT, error TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, started_at TEXT, completed_at TEXT);
+        CREATE TABLE IF NOT EXISTS lakefs_commits (
+            id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id),
+            version_id TEXT NOT NULL REFERENCES dataset_versions(id), commit_id TEXT NOT NULL,
+            repository TEXT NOT NULL, branch TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE IF NOT EXISTS registered_models (
+            id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id),
+            training_job_id TEXT NOT NULL REFERENCES training_jobs(id), name TEXT NOT NULL,
+            model_version INTEGER NOT NULL, mlflow_run_id TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(project_id,name,model_version));
+        CREATE TABLE IF NOT EXISTS model_deployments (
+            id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id),
+            registered_model_id TEXT NOT NULL REFERENCES registered_models(id), name TEXT NOT NULL,
+            environment TEXT NOT NULL, status TEXT NOT NULL, endpoint TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
         ''')
         # Additive migrations preserve annotations from existing deployments.
         if 'annotation_type' not in {r['name'] for r in db.execute('PRAGMA table_info(projects)')}:
@@ -137,6 +153,9 @@ def init_db():
         db.execute('CREATE INDEX IF NOT EXISTS idx_comments_project ON project_comments(project_id,created_at)')
         db.execute('CREATE INDEX IF NOT EXISTS idx_versions_project ON dataset_versions(project_id,version_number)')
         db.execute('CREATE INDEX IF NOT EXISTS idx_training_jobs_project ON training_jobs(project_id,created_at)')
+        db.execute('CREATE INDEX IF NOT EXISTS idx_lakefs_commits_project ON lakefs_commits(project_id,created_at)')
+        db.execute('CREATE INDEX IF NOT EXISTS idx_registered_models_project ON registered_models(project_id,created_at)')
+        db.execute('CREATE INDEX IF NOT EXISTS idx_model_deployments_project ON model_deployments(project_id,created_at)')
         # Existing deployments become version 1 without altering any image data.
         for project in db.execute('SELECT id,created_at FROM projects').fetchall():
             batch = db.execute('SELECT id FROM import_batches WHERE project_id=? ORDER BY rowid LIMIT 1',

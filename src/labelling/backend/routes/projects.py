@@ -291,6 +291,10 @@ def merge_project(project_id: str, payload: ProjectMerge):
                     db.execute('UPDATE annotation_revisions SET boxes=?,labels=? WHERE id=?',
                                (json.dumps(revision_boxes), json.dumps(revision_labels), revision['id']))
             db.execute('UPDATE project_comments SET project_id=? WHERE project_id=?', (project_id, source_id))
+            db.execute('DELETE FROM model_deployments WHERE project_id=?', (source_id,))
+            db.execute('DELETE FROM registered_models WHERE project_id=?', (source_id,))
+            db.execute('DELETE FROM training_jobs WHERE project_id=?', (source_id,))
+            db.execute('DELETE FROM lakefs_commits WHERE project_id=?', (source_id,))
             db.execute('DELETE FROM dataset_versions WHERE project_id=?', (source_id,))
             db.execute('DELETE FROM import_batches WHERE project_id=?', (source_id,))
             db.execute('UPDATE projects SET classes=? WHERE id=?', (json.dumps(root_classes), project_id))
@@ -316,6 +320,10 @@ def delete_project(project_id: str):
         db.execute('DELETE FROM annotation_revisions WHERE image_id IN (SELECT id FROM images WHERE project_id=?)',
                    (project_id,))
         db.execute('DELETE FROM project_comments WHERE project_id=?', (project_id,))
+        db.execute('DELETE FROM model_deployments WHERE project_id=?', (project_id,))
+        db.execute('DELETE FROM registered_models WHERE project_id=?', (project_id,))
+        db.execute('DELETE FROM training_jobs WHERE project_id=?', (project_id,))
+        db.execute('DELETE FROM lakefs_commits WHERE project_id=?', (project_id,))
         db.execute('DELETE FROM dataset_versions WHERE project_id=?', (project_id,))
         db.execute('DELETE FROM images WHERE project_id=?', (project_id,))
         db.execute('DELETE FROM import_batches WHERE project_id=?', (project_id,))
