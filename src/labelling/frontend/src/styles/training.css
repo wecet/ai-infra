@@ -15,7 +15,8 @@
 .compute-card span { display: grid; gap: 4px; }.compute-card small { color: var(--muted); font-weight: 400; }
 .device-row, .remote-row { display: flex; align-items: end; flex-wrap: wrap; gap: 14px; padding: 12px 0 0; }
 .device-disabled { opacity: .45; cursor: not-allowed !important; }
-.remote-row label { min-width: min(320px, 100%); }.training-submit { display: flex; justify-content: flex-end; }
+.remote-row label { min-width: min(320px, 100%); }.training-submit { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.config-checkbox { min-height: 38px; align-self: end; }
 .jobs-heading { margin-top: 8px; }.job-status { display: inline-flex; padding: 4px 8px; border-radius: 99px; font-weight: 800; text-transform: capitalize; background: #eceef0; }
 .job-status.succeeded { color: #27613b; background: #def2e4; }.job-status.failed { color: var(--danger); background: #f8dfdb; }.job-status.running { color: #80511b; background: #fae9c8; }
 [data-theme="dark"] .compute-card { background: #24272c; } [data-theme="dark"] .job-status { background: #3a3e46; color: #e7e8ea; }
