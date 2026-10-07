@@ -363,6 +363,12 @@ h2 { font-size: 15px; letter-spacing: -.15px; }
 [data-theme="dark"] .canvas-scroll {
   background-image: linear-gradient(#454a5255 1px, transparent 1px), linear-gradient(90deg, #454a5255 1px, transparent 1px);
 }
+[data-theme="dark"] .representation {
+  background-color: #272a30;
+  background-image:
+    linear-gradient(#ffffff0a 1px, transparent 1px),
+    linear-gradient(90deg, #ffffff0a 1px, transparent 1px);
+}
 [data-theme="dark"] .empty {
   background-color: #272a30;
   background-image: linear-gradient(#454a5244 1px, transparent 1px), linear-gradient(90deg, #454a5244 1px, transparent 1px);
