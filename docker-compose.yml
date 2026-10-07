@@ -51,8 +51,11 @@ services:
     restart: unless-stopped
     environment:
       TRAINING_GPU_AVAILABLE: ${TRAINING_GPU_AVAILABLE:-auto}
+      TRAINING_WORKSPACES_ROOT: /workspaces
     ports:
       - "${TRAINING_AGENT_PORT:-8090}:8090"
+    volumes:
+      - "${TRAINING_WORKSPACES_PATH:-./workspaces}:/workspaces:ro"
     networks:
       - ai-infra
     logging: *default-logging

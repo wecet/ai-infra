@@ -1,4 +1,5 @@
 """Portable compute agent. Deploy this same container on CPU or GPU hosts."""
+import base64
 import json
 import os
 import shutil
@@ -9,7 +10,8 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from PIL import Image
-from ai_interfaces import BaseModelConfig
+from ai_interfaces import BaseModelConfig, DatasetVersion, TrainingContext
+from workbenches import discover_workbenches, find_workbench, load_model
 
 app = FastAPI(title="ai-infra compute agent")
 
@@ -25,6 +27,11 @@ MODELS = {
         "defaults": {"epochs": 1, "batch_size": 16, "learning_rate": 0.001, "image_size": 640},
     }],
 }
+
+for task_name, task_models in MODELS.items():
+    for model in task_models:
+        model.update({"task": task_name, "workspace": "Bundled", "available": True,
+                      "config_schema": BaseModelConfig.model_json_schema()})
 
 
 def gpu_available():
@@ -47,7 +54,8 @@ def capabilities():
     gpu = gpu_available()
     return {"cpu": {"available": True}, "gpu": {"available": gpu,
             "reason": "GPU runtime is not exposed to this agent" if not gpu else "GPU runtime detected"},
-            "models": MODELS}
+            "models": MODELS, "workbenches": discover_workbenches(),
+            "workspace_root": os.environ.get("TRAINING_WORKSPACES_ROOT", "/workspaces")}
 
 
 def _classification(coco, root):
@@ -81,10 +89,15 @@ def _detection(coco, root):
 async def train(manifest: str = Form(...), dataset: UploadFile = File(...)):
     try: config = json.loads(manifest)
     except json.JSONDecodeError as exc: raise HTTPException(422, "Invalid training manifest") from exc
-    task = config.get("annotation_type"); allowed = {m["key"] for m in MODELS.get(task, [])}
-    if config.get("base_model") not in allowed: raise HTTPException(422, "Model is not installed on this compute agent")
+    task = config.get("annotation_type"); model_key = config.get("base_model")
+    builtin = model_key in {m["key"] for m in MODELS.get(task, [])}
+    workbench = find_workbench(model_key) if isinstance(model_key, str) and model_key.startswith("workspace:") else None
+    if not builtin and not workbench: raise HTTPException(422, "Model workbench is unavailable on this compute agent")
+    if workbench and workbench["task"] != task: raise HTTPException(422, "Workbench task does not match this project")
     if "gpu" in config.get("devices", []) and not gpu_available(): raise HTTPException(409, "GPU is unavailable on this compute agent")
-    try: model_config = BaseModelConfig.model_validate(config.get("config", {}))
+    model_class = load_model(workbench) if workbench else None
+    config_type = model_class.config_type if model_class else BaseModelConfig
+    try: model_config = config_type.model_validate(config.get("config", {}))
     except Exception as exc: raise HTTPException(422, f"Invalid model configuration: {exc}") from exc
     work = Path(tempfile.mkdtemp(prefix="training-"))
     try:
@@ -97,11 +110,27 @@ async def train(manifest: str = Form(...), dataset: UploadFile = File(...)):
         files = list((work / "dataset" / "annotations").glob("*.json"))
         if len(files) != 1: raise HTTPException(422, "Dataset must contain one COCO annotation file")
         coco = json.loads(files[0].read_text())
-        artifact, metrics = (_classification(coco, work / "dataset") if task == "image_classification"
-                             else _detection(coco, work / "dataset"))
-        artifact.update({"model": config["base_model"], "configuration": model_config.model_dump(mode="json"),
-                         "hyperparameters": config.get("hyperparameters", {}),
-                         "classes": coco.get("categories", [])})
-        return {"status": "succeeded", "metrics": metrics, "artifact": artifact,
-                "summary": "Reference model trained successfully"}
+        if model_class:
+            output = work / "output"; output.mkdir()
+            effective = model_config.model_copy(update={"dataset_path": archive, "output_path": output})
+            model = model_class(effective)
+            dataset_version = DatasetVersion(effective.project_id, effective.dataset_version_id,
+                config.get("dataset_name", "dataset"), task, archive, coco.get("categories", []))
+            result = model.train(TrainingContext(config.get("job_id", "job"), dataset_version, output,
+                config.get("hyperparameters", {}), tuple(config.get("devices", ["cpu"]))))
+            artifact_path = result.artifact.path.resolve(); artifact_path.relative_to(output.resolve())
+            if not artifact_path.is_file() or artifact_path.stat().st_size > 512 * 1024 * 1024:
+                raise HTTPException(422, "Workbench artifact is missing or exceeds 512 MiB")
+            artifact = {"filename": artifact_path.name, "media_type": result.artifact.media_type,
+                        "content_base64": base64.b64encode(artifact_path.read_bytes()).decode()}
+            metrics, summary = dict(result.metrics), result.summary
+        else:
+            payload, metrics = (_classification(coco, work / "dataset") if task == "image_classification"
+                                else _detection(coco, work / "dataset"))
+            payload.update({"model": model_key, "configuration": model_config.model_dump(mode="json"),
+                            "hyperparameters": config.get("hyperparameters", {}), "classes": coco.get("categories", [])})
+            artifact = {"filename": "model.json", "media_type": "application/json",
+                        "content_base64": base64.b64encode(json.dumps(payload, indent=2).encode()).decode()}
+            summary = "Reference model trained successfully"
+        return {"status": "succeeded", "metrics": metrics, "artifact": artifact, "summary": summary}
     finally: shutil.rmtree(work, ignore_errors=True)
