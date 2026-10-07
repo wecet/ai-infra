@@ -6,6 +6,7 @@ import History from "./History";
 import Versions from "./Versions";
 import Editor from "./Editor";
 import Dashboard from "./Dashboard";
+import Training from "./Training";
 
 function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
   const [tab, setTab] = useState("annotate");
@@ -203,6 +204,10 @@ function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
           onClick={() => setTab("versions")}>
           ◈ Versions
         </button>
+        <button disabled={locked} className={tab === "training" ? "selected" : ""}
+          onClick={() => setTab("training")}>
+          ◉ Training
+        </button>
         <span>
           {images.filter((i) => i.completed).length} / {images.length} complete
         </span>
@@ -246,6 +251,8 @@ function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
         <Settings project={project} onUpdated={onUpdated} />
       ) : tab === "versions" ? (
         <Versions project={project} />
+      ) : tab === "training" ? (
+        <Training project={project} />
       ) : tab === "history" ? (
         <History project={project} onRestored={() => refresh()}
           onView={(list) => { setReviewImages(list); setTab("review"); }} />
