@@ -1,5 +1,9 @@
 # Labelling Studio
 
+The Training tab starts jobs only from immutable published versions. It supports the bundled local CPU/GPU compute agent or a remote agent addressed by IP, exposes model hyperparameters, downloads completed artifacts, and links tracked runs to MLflow. GPU selection remains disabled until the selected agent reports a usable runtime.
+
+Model implementations must use the ABCs in [`../../libs/ai_interfaces`](../../libs/ai_interfaces/README.md), keeping classification and object-detection packages compatible with the same job runner.
+
 A React frontend and Python/FastAPI backend for object detection and image classification. SQLite stores project settings, classes, annotations, completion and review state, comments, and dataset history. Active images and restorable deleted-image archives live in the same `labelling_data` Docker volume.
 
 ## Run with the stack
