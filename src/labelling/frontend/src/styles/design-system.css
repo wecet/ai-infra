@@ -358,6 +358,9 @@ h2 { font-size: 15px; letter-spacing: -.15px; }
 [data-theme="dark"] .progress-track { background: #41454d; }
 [data-theme="dark"] .tabs button { color: #c9ccd2; background: transparent; border-color: transparent; }
 [data-theme="dark"] .tabs button.selected { color: #211b19; background: var(--accent); }
+[data-theme="dark"] .project-subtabs button { color: #aeb2ba; background: transparent; border-color: transparent; }
+[data-theme="dark"] .project-subtabs button:hover { color: #f0f0f1; background: transparent; }
+[data-theme="dark"] .project-subtabs button.selected { color: #fff; background: transparent; border-color: var(--accent); }
 [data-theme="dark"] .canvas-panel,
 [data-theme="dark"] .canvas-scroll { background-color: #1e2126; }
 [data-theme="dark"] .canvas-scroll {

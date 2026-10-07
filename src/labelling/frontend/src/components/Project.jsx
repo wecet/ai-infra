@@ -10,6 +10,13 @@ import Training from "./Training";
 import Lineage from "./Lineage";
 import VersionComparison from "./VersionComparison";
 
+const sections = [
+  { label: "Label", tabs: [["annotate", "Annotate"], ["review", "Review"]] },
+  { label: "Dataset", tabs: [["stats", "Dashboard"], ["history", "History"], ["versions", "Versions"], ["compare", "Compare"], ["lineage", "Lineage"]] },
+  { label: "Training", tabs: [["training", "Training"]] },
+  { label: "Manage", tabs: [["settings", "Settings"]] },
+];
+
 function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
   const [tab, setTab] = useState("annotate");
   const [images, setImages] = useState([]);
@@ -132,6 +139,11 @@ function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
     }
   }
   const current = images[index];
+  const activeSection = sections.find((section) => section.tabs.some(([id]) => id === tab)) || sections[0];
+  function navigate(nextTab) {
+    if (nextTab === "review") setReviewImages(null);
+    setTab(nextTab);
+  }
   return (
     <div className="page project-page">
       <div className="page-heading">
@@ -176,53 +188,18 @@ function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
           </label>
         </div>
       </div>
-      <div className="tabs">
-        <button
-          disabled={locked}
-          className={tab === "annotate" ? "selected" : ""}
-          onClick={() => setTab("annotate")}
-        >
-          ⌗ Annotate
-        </button>
-        <button
-          disabled={locked}
-          className={tab === "stats" ? "selected" : ""}
-          onClick={() => setTab("stats")}
-        >
-          ▥ Dashboard
-        </button>
-        <button disabled={locked} className={tab === "review" ? "selected" : ""}
-          onClick={() => { setReviewImages(null); setTab("review"); }}>
-          ◫ Review
-        </button>
-        <button disabled={locked} className={tab === "history" ? "selected" : ""}
-          onClick={() => setTab("history")}>
-          ◷ History
-        </button>
-        <button disabled={locked} className={tab === "settings" ? "selected" : ""}
-          onClick={() => setTab("settings")}>
-          ⚙ Settings
-        </button>
-        <button disabled={locked} className={tab === "versions" ? "selected" : ""}
-          onClick={() => setTab("versions")}>
-          ◈ Versions
-        </button>
-        <button disabled={locked} className={tab === "training" ? "selected" : ""}
-          onClick={() => setTab("training")}>
-          ◉ Training
-        </button>
-        <button disabled={locked} className={tab === "lineage" ? "selected" : ""}
-          onClick={() => setTab("lineage")}>
-          ⎇ Lineage
-        </button>
-        <button disabled={locked} className={tab === "compare" ? "selected" : ""}
-          onClick={() => setTab("compare")}>
-          ⇄ Compare
-        </button>
-        <span>
-          {images.filter((i) => i.completed).length} / {images.length} complete
-        </span>
-      </div>
+      <nav className="project-navigation" aria-label="Project pages">
+        <div className="tabs section-tabs">
+          {sections.map((section) => <button key={section.label} disabled={locked}
+            className={section === activeSection ? "selected" : ""}
+            onClick={() => navigate(section.tabs[0][0])}>{section.label}</button>)}
+          <span>{images.filter((i) => i.completed).length} / {images.length} complete</span>
+        </div>
+        {activeSection.tabs.length > 1 && <div className="project-subtabs" aria-label={`${activeSection.label} pages`}>
+          {activeSection.tabs.map(([id, label]) => <button key={id} disabled={locked}
+            className={tab === id ? "selected" : ""} onClick={() => navigate(id)}>{label}</button>)}
+        </div>}
+      </nav>
       {!classification && tab === "annotate" && (
         <div className="notice ai-controls">
           <label className="checkbox-label">

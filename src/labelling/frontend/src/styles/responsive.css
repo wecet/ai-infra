@@ -78,6 +78,9 @@
   .tabs > span {
     font-size: 10px;
   }
+  .section-tabs button { min-width: 70px; }
+  .section-tabs > span { display: none; }
+  .project-subtabs { gap: 15px; }
   .project-grid {
     grid-template-columns: 1fr;
   }
@@ -86,4 +89,3 @@
     max-width: 205px;
   }
 }
-
