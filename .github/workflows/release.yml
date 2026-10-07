@@ -1,4 +1,4 @@
-name: Publish labeller release
+name: Publish platform release
 
 on:
   push:
@@ -22,6 +22,7 @@ permissions:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}/labelling
+  TRAINING_IMAGE_NAME: ${{ github.repository }}/training-agent
 
 jobs:
   publish:
@@ -58,8 +59,8 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Generate container metadata
-        id: metadata
+      - name: Generate labeller metadata
+        id: labeller-metadata
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
@@ -78,8 +79,8 @@ jobs:
           context: ./src/labelling
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ steps.metadata.outputs.tags }}
-          labels: ${{ steps.metadata.outputs.labels }}
+          tags: ${{ steps.labeller-metadata.outputs.tags }}
+          labels: ${{ steps.labeller-metadata.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -89,24 +90,66 @@ jobs:
           context: ./src/labelling
           platforms: linux/amd64
           outputs: type=oci,dest=${{ runner.temp }}/labelling-${{ steps.version.outputs.value }}-linux-amd64.tar
-          labels: ${{ steps.metadata.outputs.labels }}
+          labels: ${{ steps.labeller-metadata.outputs.labels }}
           cache-from: type=gha
+
+      - name: Generate training agent metadata
+        id: training-metadata
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.TRAINING_IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ steps.version.outputs.value }}
+            type=raw,value=latest
+          labels: |
+            org.opencontainers.image.title=AI Infrastructure Training Agent
+            org.opencontainers.image.description=Local and remote CPU/GPU training worker
+            org.opencontainers.image.version=${{ steps.version.outputs.value }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+      - name: Build and publish training agent package
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./src/training_agent/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.training-metadata.outputs.tags }}
+          labels: ${{ steps.training-metadata.outputs.labels }}
+          cache-from: type=gha,scope=training-agent
+          cache-to: type=gha,mode=max,scope=training-agent
+
+      - name: Build downloadable training agent archive
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./src/training_agent/Dockerfile
+          platforms: linux/amd64
+          outputs: type=oci,dest=${{ runner.temp }}/training-agent-${{ steps.version.outputs.value }}-linux-amd64.tar
+          labels: ${{ steps.training-metadata.outputs.labels }}
+          cache-from: type=gha,scope=training-agent
 
       - name: Prepare release files
         env:
           VERSION: ${{ steps.version.outputs.value }}
         run: |
           gzip -9 "${RUNNER_TEMP}/labelling-${VERSION}-linux-amd64.tar"
+          gzip -9 "${RUNNER_TEMP}/training-agent-${VERSION}-linux-amd64.tar"
           cp docker-compose.yml "${RUNNER_TEMP}/docker-compose.yml"
           cp .env.example "${RUNNER_TEMP}/env.example"
+          sed -i "s|LABELLING_IMAGE=.*|LABELLING_IMAGE=ghcr.io/${GITHUB_REPOSITORY}/labelling:${VERSION}|" "${RUNNER_TEMP}/env.example"
+          sed -i "s|TRAINING_AGENT_IMAGE=.*|TRAINING_AGENT_IMAGE=ghcr.io/${GITHUB_REPOSITORY}/training-agent:${VERSION}|" "${RUNNER_TEMP}/env.example"
           cat > "${RUNNER_TEMP}/release-notes.md" <<EOF
-          ## Labelling Studio ${VERSION}
+          ## AI Infrastructure ${VERSION}
 
-          Container package:
+          Container packages:
 
           \`docker pull ghcr.io/${GITHUB_REPOSITORY}/labelling:${VERSION}\`
+          \`docker pull ghcr.io/${GITHUB_REPOSITORY}/training-agent:${VERSION}\`
 
-          The attached OCI archive is provided for offline Linux AMD64 installations. The Compose and environment templates are included for complete-stack deployment.
+          This release adds dataset lineage, published-version comparison, training workbench discovery, configurable model contracts, and compact project navigation.
+
+          The attached OCI archives are provided for offline Linux AMD64 installations. The Compose and preconfigured environment templates are included for complete-stack deployment.
           EOF
 
       - name: Create GitHub Release
@@ -116,18 +159,20 @@ jobs:
         run: |
           if gh release view "$VERSION" >/dev/null 2>&1; then
             gh release edit "$VERSION" \
-              --title "Labelling Studio $VERSION" \
+              --title "AI Infrastructure $VERSION" \
               --notes-file "${RUNNER_TEMP}/release-notes.md"
             gh release upload "$VERSION" --clobber \
               "${RUNNER_TEMP}/labelling-${VERSION}-linux-amd64.tar.gz" \
+              "${RUNNER_TEMP}/training-agent-${VERSION}-linux-amd64.tar.gz" \
               "${RUNNER_TEMP}/docker-compose.yml" \
               "${RUNNER_TEMP}/env.example"
           else
             gh release create "$VERSION" \
               --target "$GITHUB_SHA" \
-              --title "Labelling Studio $VERSION" \
+              --title "AI Infrastructure $VERSION" \
               --notes-file "${RUNNER_TEMP}/release-notes.md" \
               "${RUNNER_TEMP}/labelling-${VERSION}-linux-amd64.tar.gz" \
+              "${RUNNER_TEMP}/training-agent-${VERSION}-linux-amd64.tar.gz" \
               "${RUNNER_TEMP}/docker-compose.yml" \
               "${RUNNER_TEMP}/env.example"
           fi

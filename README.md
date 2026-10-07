@@ -43,10 +43,10 @@ The bundled models are lightweight baseline trainers: a colour-centroid classifi
 
 The project **Lineage** tab traces imports, deletion/restoration events, published versions, lakeFS commits, training runs, registered models, and deployments. The **Compare** tab audits any two published versions, including membership, annotations, classes, deterministic train/test assignment, review status, quality metrics, duplicates, and split leakage.
 
-Install those contracts in another workspace from a release tag:
+Install the current `ai_interfaces` contracts in another workspace from their package release tag:
 
 ```bash
-pip install "ai-infra-interfaces @ git+https://github.com/wecet/ai-infra.git@v1.0.0#subdirectory=libs/ai_interfaces"
+pip install "ai-infra-interfaces @ git+https://github.com/wecet/ai-infra.git@ai-interfaces-v0.2.1#subdirectory=libs/ai_interfaces"
 ```
 
 ## Configuration
@@ -73,7 +73,16 @@ Do not use `docker compose down -v` unless you intend to delete all labelling, l
 
 ## Releases and GitHub Packages
 
-Pushing a semantic version tag such as `v1.0.0`, or manually running **Publish labeller release** with a version, publishes a multi-platform labeller image to `ghcr.io/wecet/ai-infra/labelling`. The workflow also creates a GitHub Release containing a Linux AMD64 OCI image archive and the Compose/environment templates. It uses the repository-provided `GITHUB_TOKEN`; no additional publishing secrets are required.
+The current platform release is `v1.1.0`. Pull its multi-platform runtime packages with:
+
+```bash
+docker pull ghcr.io/wecet/ai-infra/labelling:v1.1.0
+docker pull ghcr.io/wecet/ai-infra/training-agent:v1.1.0
+```
+
+Pushing a semantic version tag, or manually running **Publish platform release**, publishes both images for AMD64 and ARM64. The workflow creates a GitHub Release containing offline Linux AMD64 OCI archives plus Compose and environment templates already configured for the published images. It uses the repository-provided `GITHUB_TOKEN`; no additional publishing secrets are required.
+
+The independently versioned Python model-contract package is currently `ai-interfaces-v0.2.1`; its GitHub Release contains the wheel and source distribution.
 
 ## Persistence and migration
 
