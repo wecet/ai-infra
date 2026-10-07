@@ -23,12 +23,17 @@ services:
       LAKEFS_REPOSITORY: ${LAKEFS_REPOSITORY:-datasets}
       LAKEFS_BRANCH: ${LAKEFS_BRANCH:-main}
       LAKEFS_STORAGE_NAMESPACE: ${LAKEFS_STORAGE_NAMESPACE:-local://datasets}
+      TRAINING_AGENT_URL: http://training-agent:8090
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MLFLOW_PUBLIC_URL: http://localhost:${MLFLOW_PORT:-5001}
     ports:
       - "${LABELLING_PORT:-8081}:8080"
     volumes:
       - labelling_data:/data
     depends_on:
       lakefs:
+        condition: service_healthy
+      training-agent:
         condition: service_healthy
     networks:
       - ai-infra
@@ -37,6 +42,20 @@ services:
       options:
         max-size: ${LOG_MAX_SIZE:-10m}
         max-file: "${LOG_MAX_FILE:-3}"
+
+  training-agent:
+    build:
+      context: .
+      dockerfile: src/training_agent/Dockerfile
+    image: ${TRAINING_AGENT_IMAGE:-ai-infra/training-agent:local}
+    restart: unless-stopped
+    environment:
+      TRAINING_GPU_AVAILABLE: ${TRAINING_GPU_AVAILABLE:-auto}
+    ports:
+      - "${TRAINING_AGENT_PORT:-8090}:8090"
+    networks:
+      - ai-infra
+    logging: *default-logging
 
   lakefs-permissions:
     image: ${LAKEFS_IMAGE:-treeverse/lakefs:latest}
