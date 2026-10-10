@@ -1,3 +1,4 @@
+import { formatDate } from "../dates";
 import React, { useEffect, useState } from "react";
 import { api } from "../api";
 
@@ -48,7 +49,7 @@ function Versions({ project, initialVersion = "" }) {
     {versions && !versions.length && <div className="empty"><h2>No published versions</h2><p>Use Publish on Dashboard to freeze the current dataset state.</p></div>}
     {!!versions?.length && <div className="panel table-wrap"><table><thead><tr><th>VERSION</th><th>SAMPLES</th><th>PUBLISHED BY</th><th>DATE</th><th></th></tr></thead>
       <tbody>{versions.map((item) => <tr key={item.id}><td><strong>{item.name}</strong></td><td>{item.sample_count}</td>
-        <td>{item.author}</td><td>{new Date(`${item.created_at}${item.created_at.endsWith("Z") ? "" : "Z"}`).toLocaleString()}</td>
+        <td>{item.author}</td><td>{formatDate(item.created_at)}</td>
         <td><div className="version-actions"><button onClick={() => open(item)}>View</button>
           <button className="primary" disabled={!!exporting} onClick={() => download(item)}>
             {exporting === item.id ? "Exporting…" : "Export ZIP"}</button>
