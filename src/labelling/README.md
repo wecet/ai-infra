@@ -117,6 +117,6 @@ Training job actions include **↓ Download Model**, **↗ View on MLflow**, and
 
 ### Theme and layout conventions
 
-Light and dark modes share control dimensions and visible keyboard focus outlines. Small accent text uses a separate contrast color from coral button backgrounds. Lineage cards align content to the left and show readable metadata; UTC timestamps with or without explicit offsets use the same date formatter. Training job metrics expand under **View training metrics**, while model, MLflow, and live-metrics links remain compact on one row.
+Light and dark modes share control dimensions and visible keyboard focus outlines. Small accent text uses a separate contrast color from coral button backgrounds. Lineage cards align content to the left and show readable metadata. Within Commits & runs, lakeFS commits use a teal branch icon and edge, while training runs use a coral play icon and edge; UTC timestamps with or without explicit offsets use the same date formatter. Training job metrics expand under **View training metrics**, while model, MLflow, and live-metrics links remain compact on one row.
 
 When reviewing UI changes, check the project list, annotation and Review pages, Dashboard, History, Versions (including previews), Compare, Lineage, Training, and Manage in both themes. Use existing data without altering annotations or publishing extra versions for visual checks. Check populated and empty states where available, and inspect narrow-screen rules separately.
