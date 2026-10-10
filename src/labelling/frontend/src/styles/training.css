@@ -22,3 +22,9 @@
 [data-theme="dark"] .compute-card { background: #24272c; } [data-theme="dark"] .job-status { background: #3a3e46; color: #e7e8ea; }
 [data-theme="dark"] .job-status.succeeded { background: #243a2b; color: #9ed6ae; } [data-theme="dark"] .job-status.failed { background: #442b29; color: #ffaaa0; }
 @media (max-width: 700px) { .training-grid, .compute-choice { grid-template-columns: 1fr; }.training-params { grid-template-columns: repeat(2, 1fr); } }
+
+.config-structured { grid-column: span 2; }
+.config-structured textarea { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.config-structured details { font-size: 12px; font-weight: 400; }
+.training-form label small { font-weight: 400; }
+.training-form label:not(.checkbox-label):not(.compute-card) { align-content: start; }

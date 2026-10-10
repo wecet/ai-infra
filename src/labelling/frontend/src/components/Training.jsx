@@ -1,26 +1,39 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
+import { managedFields, resolveSchema, schemaDefaults, normalizeParams, liveMetricsEnabled } from "../training-config";
 
 const defaults = { epochs: 1, batch_size: 32, learning_rate: 0.001, image_size: 224 };
-const managedFields = new Set(["dataset_path", "output_path", "mlflow_url", "project_id", "dataset_version_id", "class_names", "devices"]);
 
-function schemaDefaults(model) {
-  const values = { ...defaults, ...(model?.defaults || {}) };
-  Object.entries(model?.config_schema?.properties || {}).forEach(([key, property]) => {
-    if (!managedFields.has(key) && property.default !== undefined) values[key] = property.default;
-  });
-  return values;
+function dashboardUrl(caps) {
+  if (!caps?.tensorboard?.available) return null;
+  try {
+    const url = new URL(caps.tensorboard.url);
+    return ["http:", "https:"].includes(url.protocol) ? url.href : null;
+  } catch { return null; }
 }
 
-function ConfigField({ name, schema, value, onChange }) {
+function ConfigField({ name, schema, value, required, onChange }) {
   const label = schema.title || name.replaceAll("_", " ");
-  if (schema.enum) return <label>{label}<select value={value ?? ""} required onChange={(e) => onChange(e.target.value)}>
-    {schema.enum.map((option) => <option key={String(option)} value={option}>{String(option)}</option>)}</select></label>;
-  if (schema.type === "boolean") return <label className="checkbox-label config-checkbox"><input type="checkbox" checked={Boolean(value)} onChange={(e) => onChange(e.target.checked)} /> {label}</label>;
-  if (schema.type === "integer" || schema.type === "number") return <label>{label}<input type="number" value={value ?? ""}
-    min={schema.minimum} max={schema.maximum} step={schema.type === "integer" ? 1 : "any"} required
-    onChange={(e) => onChange(schema.type === "integer" ? Number.parseInt(e.target.value, 10) : Number(e.target.value))} /></label>;
-  return <label>{label}<input type="text" value={value ?? ""} required onChange={(e) => onChange(e.target.value)} /></label>;
+  const hint = schema.description && <small className="muted">{schema.description}</small>;
+  if (schema.enum) return <label>{label}<select value={value ?? schema.default ?? ""} required={required} onChange={(e) => onChange(e.target.value)}>
+    {schema.default !== undefined && <option value="">Use default ({String(schema.default)})</option>}
+    {schema.enum.map((option) => <option key={String(option)} value={option}>{String(option)}</option>)}</select>{hint}</label>;
+  if (schema.type === "array" && schema.items?.enum) return <label>{label}<select multiple size={Math.min(5, schema.items.enum.length + 1)}
+    value={(value ?? schema.default ?? []).length ? (value ?? schema.default) : [""]}
+    onChange={(e) => onChange(Array.from(e.target.selectedOptions, (option) => option.value).filter(Boolean))}>
+    <option value="">None</option>{schema.items.enum.map((option) => <option key={option} value={option}>{option}</option>)}</select>{hint}
+    <small className="muted">Cmd/Ctrl-click to select multiple callbacks.</small></label>;
+  if (schema.type === "boolean") return <label className="checkbox-label config-checkbox"><input type="checkbox" checked={Boolean(value ?? schema.default)} onChange={(e) => onChange(e.target.checked)} /> {label}</label>;
+  if (["object", "array"].includes(schema.type)) return <label className="config-structured">{label}<textarea rows="5" required={required}
+    value={typeof value === "string" ? value : JSON.stringify(value ?? schema.default ?? (schema.type === "array" ? [] : {}), null, 2)}
+    placeholder={JSON.stringify(schema.default ?? {}, null, 2)} onChange={(e) => onChange(e.target.value)} />{hint}
+    {schema.properties && <details><summary>Supported options</summary>{Object.entries(schema.properties).map(([key, property]) =>
+      <div key={key}><strong>{key}</strong>: {property.enum?.join(" / ") || property.type}
+        {property.minimum !== undefined && ` (${property.minimum}–${property.maximum ?? "∞"})`} — {property.description}</div>)}</details>}</label>;
+  if (schema.type === "integer" || schema.type === "number") return <label>{label}<input type="number" value={value ?? schema.default ?? ""}
+    min={schema.minimum} max={schema.maximum} step={schema.type === "integer" ? 1 : "any"} required={required}
+    placeholder={schema.default === undefined ? "" : `Default: ${schema.default}`} onChange={(e) => onChange(e.target.value)} />{hint}</label>;
+  return <label>{label}<textarea rows="2" value={value ?? schema.default ?? ""} required={required} onChange={(e) => onChange(e.target.value)} />{hint}</label>;
 }
 
 export default function Training({ project }) {
@@ -32,6 +45,7 @@ export default function Training({ project }) {
   const [template, setTemplate] = useState(null);
   const [busy, setBusy] = useState(false); const [error, setError] = useState("");
   const [probe, setProbe] = useState("");
+  const tensorboardUrl = dashboardUrl(caps);
   const models = useMemo(() => [
     ...Object.values(caps?.models || {}).flat(), ...(caps?.workbenches || []),
   ], [caps]);
@@ -70,13 +84,15 @@ export default function Training({ project }) {
   }
   async function submit(e) {
     e.preventDefault(); setBusy(true); setError("");
-    try { await api(`/projects/${project.id}/training/jobs`, { method: "POST", body: JSON.stringify({
-      version_id: version, base_model: model, hyperparameters: params,
+    try { const hyperparameters = normalizeParams(params, selectedModel);
+      await api(`/projects/${project.id}/training/jobs`, { method: "POST", body: JSON.stringify({
+      version_id: version, base_model: model, hyperparameters,
       compute: { kind, cpu: kind === "local" ? cpu : true, gpu: kind === "local" ? gpu : false, endpoint },
     }) }); await refreshJobs(); } catch (e) { setError(e.message); } finally { setBusy(false); }
   }
   return <div className="training-layout">
-    <div className="page-heading"><div><h2>Model training</h2><p className="muted">Train against an immutable dataset version and track the run in MLflow.</p></div></div>
+    <div className="page-heading"><div><h2>Model training</h2><p className="muted">Train against an immutable dataset version and track the run in MLflow.</p></div>
+      {tensorboardUrl && liveMetricsEnabled(params, selectedModel) && <a className="button" href={tensorboardUrl} target="_blank" rel="noopener noreferrer">View live metrics</a>}</div>
     {error && <div className="alert">{error}</div>}
     <form className="panel training-form" onSubmit={submit}>
       <section><div className="eyebrow">DATA &amp; MODEL</div>
@@ -97,18 +113,18 @@ export default function Training({ project }) {
       </section>
       <section><div className="eyebrow">MODEL CONFIGURATION</div><div className="training-grid training-params">
         {Object.entries(selectedModel?.config_schema?.properties || {}).filter(([key]) => !managedFields.has(key)).map(([key, property]) =>
-          <ConfigField key={key} name={key} schema={property} value={params[key]}
+          <ConfigField key={key} name={key} schema={resolveSchema(property, selectedModel.config_schema)} value={params[key]} required={selectedModel.config_schema.required?.includes(key)}
             onChange={(value) => setParams((current) => ({ ...current, [key]: value }))} />)}</div>
         {!selectedModel?.config_schema && <p className="muted">This model does not expose a configurable Pydantic schema.</p>}
       </section>
       <section><div className="eyebrow">COMPUTE TARGET</div><div className="compute-choice">
         <label className={`compute-card ${kind === 'local' ? 'selected' : ''}`}><input type="radio" name="target" checked={kind === 'local'} onChange={() => { setKind('local'); load(); }} /><span><strong>Local agent</strong><small>Bundled with this Compose stack</small></span></label>
-        <label className={`compute-card ${kind === 'remote' ? 'selected' : ''}`}><input type="radio" name="target" checked={kind === 'remote'} onChange={() => setKind('remote')} /><span><strong>Remote agent</strong><small>Connect to another machine by IP</small></span></label></div>
+        <label className={`compute-card ${kind === 'remote' ? 'selected' : ''}`}><input type="radio" name="target" checked={kind === 'remote'} onChange={() => { setKind("remote"); setCaps(null); setProbe(""); }} /><span><strong>Remote agent</strong><small>Connect to another machine by IP</small></span></label></div>
         {kind === "local" ? <div className="device-row">
           <label className="checkbox-label"><input type="checkbox" checked={cpu} onChange={(e) => setCpu(e.target.checked)} /> CPU</label>
           <label className={`checkbox-label ${!caps?.gpu?.available ? 'device-disabled' : ''}`} title={caps?.gpu?.reason || ''}><input type="checkbox" checked={gpu} disabled={!caps?.gpu?.available} onChange={(e) => setGpu(e.target.checked)} /> GPU</label>
           {!caps?.gpu?.available && <span className="muted small">{caps?.gpu?.reason || "Checking GPU availability…"}</span>}
-        </div> : <div className="remote-row"><label>Agent IP address<input value={endpoint} required placeholder="192.168.1.20:8090" onChange={(e) => setEndpoint(e.target.value)} /></label><button type="button" onClick={testRemote}>Test connection</button><span className="muted">{probe}</span></div>}
+        </div> : <div className="remote-row"><label>Agent IP address<input value={endpoint} required placeholder="192.168.1.20:8090" onChange={(e) => { setEndpoint(e.target.value); setCaps(null); setProbe(""); }} /></label><button type="button" onClick={testRemote}>Test connection</button><span className="muted">{probe}</span></div>}
       </section>
       <div className="training-submit"><span className="muted small">{compatibleModels.length} compatible · {models.length - compatibleModels.length} visible but unavailable</span><button className="primary" disabled={busy || !version || !model || (kind === 'local' && !cpu && !gpu)}>{busy ? "Queuing…" : "Start training"}</button></div>
     </form>
