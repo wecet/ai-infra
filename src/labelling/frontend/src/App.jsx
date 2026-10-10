@@ -143,7 +143,7 @@ function App() {
             }
           }}
         >
-          <span className="brand-mark" aria-hidden="true">L</span>
+          <img className="brand-mark" src="/favicon.svg?v=ai-studio" alt="" aria-hidden="true" />
           <span className="brand-copy">
             <strong>AI Studio</strong>
             <small>Dataset workspace</small>
