@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { api } from "../api";
+import AnnotationBox from "./AnnotationBox";
 import { classColor } from "../visuals";
 
 function Editor({
@@ -287,7 +288,7 @@ function Editor({
             <div className="zoom-controls">
               <button aria-label="Undo" disabled={!undoStack.current.length || disabled || dirty} onClick={undo}>↶</button>
               <button aria-label="Redo" disabled={!redoStack.current.length || disabled || dirty} onClick={redo}>↷</button>
-              <button className={panMode ? "chosen" : ""} aria-pressed={panMode}
+              <button className={`toolbar-text ${panMode ? "chosen" : ""}`} aria-pressed={panMode}
                 onClick={() => setPanMode((value) => !value)}>Pan</button>
               <button
                 aria-label="Zoom out"
@@ -296,7 +297,7 @@ function Editor({
               >
                 −
               </button>
-              <button onClick={() => setZoom(1)}>
+              <button className="toolbar-text" onClick={() => setZoom(1)}>
                 {Math.round(zoom * 100)}%
               </button>
               <button
@@ -306,7 +307,7 @@ function Editor({
               >
                 ＋
               </button>
-              <button onClick={() => editorElement.current?.requestFullscreen()}>Fullscreen</button>
+              <button className="toolbar-text" onClick={() => editorElement.current?.requestFullscreen()}>Fullscreen</button>
             </div>
           </div>
           <div className="image-adjustments">
@@ -350,34 +351,10 @@ function Editor({
               >
                 {displayBoxes.map((b, i) => (
                   <g key={i}>
-                    <rect
-                      x={b.x}
-                      y={b.y}
-                      width={b.width}
-                      height={b.height}
-                      fill={classColor(project, b.category_id)}
-                      fillOpacity={selected === i ? ".2" : ".08"}
-                      stroke={classColor(project, b.category_id)}
-                      strokeWidth={selected === i ? 3 : 2}
-                      vectorEffect="non-scaling-stroke"
-                      onPointerDown={(e) => start(e, i)}
-                      style={{ cursor: "move" }}
-                    />
-                    <text
-                      x={b.x + 3}
-                      y={Math.max(12, b.y - 5)}
-                      fill={classColor(project, b.category_id)}
-                      fontSize={Math.max(12, image.width / 70)}
-                      paintOrder="stroke"
-                      stroke="#111"
-                      strokeWidth="2"
-                      pointerEvents="none"
-                    >
-                      {
-                        project.classes.find((c) => c.id === b.category_id)
-                          ?.name
-                      }
-                    </text>
+                    <AnnotationBox box={b} color={classColor(project, b.category_id)}
+                      label={project.classes.find((c) => c.id === b.category_id)?.name}
+                      imageWidth={image.width} imageHeight={image.height} selected={selected === i}
+                      onPointerDown={(e) => start(e, i)} />
                     {selected === i && (
                       <rect
                         x={b.x + b.width - image.width / 100}
@@ -385,6 +362,7 @@ function Editor({
                         width={image.width / 100}
                         height={image.width / 100}
                         fill={classColor(project, b.category_id)}
+                        stroke="#161a22" strokeWidth="2" vectorEffect="non-scaling-stroke"
                         onPointerDown={(e) => start(e, i, true)}
                         style={{ cursor: "nwse-resize" }}
                       />

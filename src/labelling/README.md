@@ -110,3 +110,5 @@ API tests cover persisted progress, immutable versions, version comparison, end-
 ### Training failure recovery
 
 If **Start training** cannot submit the configuration, AI Studio opens a closable error popup and keeps the form available. If a queued trainer fails later, polling opens a popup with the trainer's error message and records the failed run in **Training jobs**. Close with **Close** or **Escape**, correct the configuration or dataset, then start a new run. The same failed job is not repeatedly shown during polling; earlier failures stay in the jobs table when you reopen the page.
+
+Annotation selection uses theme-aware surfaces in the editor, review cards and version comparison. Bounding boxes retain their class colors with contrasting outlines, and class names appear on solid dark badges so they remain readable over bright or dark images.
