@@ -105,3 +105,13 @@ tests/.venv/bin/python -m pip install pytest==9.1.1
 PYTHONPATH=tests tests/.venv/bin/python -m pytest tests/test_augmentations.py tests/test_gradcam.py -q
 node --test src/labelling/frontend/tests/training-config.test.js
 ```
+
+### Field descriptions in AI Studio
+
+Use Pydantic's `Field(description="...")` to explain a configuration variable:
+
+```python
+gradcam_samples: int = Field(default=1, ge=1, le=8, description="Number of validation images to explain with Grad-CAM each time the callback runs.")
+```
+
+AI Studio shows this description in a closable popup beside the field label. Fields without a description show `No description defined`.

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useId, useRef } from "react";
 import { api } from "../api";
 import { managedFields, resolveSchema, schemaDefaults, normalizeParams, liveMetricsEnabled } from "../training-config";
 
@@ -13,27 +13,39 @@ function dashboardUrl(caps) {
 }
 
 function ConfigField({ name, schema, value, required, onChange }) {
-  const label = <span className="config-field-title">{schema.title || name.replaceAll("_", " ")}</span>;
-  const hint = schema.description && <small className="muted">{schema.description}</small>;
-  if (schema.enum) return <label className="config-field">{label}<select value={value ?? schema.default ?? ""} required={required} onChange={(e) => onChange(e.target.value)}>
+  const id = useId();
+  const dialog = useRef(null);
+  const title = schema.title || name.replaceAll("_", " ");
+  const inputProps = { id, required };
+  let control;
+  if (schema.enum) control = <select {...inputProps} value={value ?? schema.default ?? ""} onChange={(e) => onChange(e.target.value)}>
     {schema.default !== undefined && <option value="">Use default ({String(schema.default)})</option>}
-    {schema.enum.map((option) => <option key={String(option)} value={option}>{String(option)}</option>)}</select>{hint}</label>;
-  if (schema.type === "array" && schema.items?.enum) return <label className="config-field">{label}<select multiple size={Math.min(5, schema.items.enum.length + 1)}
+    {schema.enum.map((option) => <option key={String(option)} value={option}>{String(option)}</option>)}</select>;
+  else if (schema.type === "array" && schema.items?.enum) control = <select id={id} multiple size={Math.min(5, schema.items.enum.length + 1)}
     value={(value ?? schema.default ?? []).length ? (value ?? schema.default) : [""]}
     onChange={(e) => onChange(Array.from(e.target.selectedOptions, (option) => option.value).filter(Boolean))}>
-    <option value="">None</option>{schema.items.enum.map((option) => <option key={option} value={option}>{option}</option>)}</select>{hint}
-    <small className="muted">Cmd/Ctrl-click to select multiple callbacks.</small></label>;
-  if (schema.type === "boolean") return <label className="checkbox-label config-checkbox"><input type="checkbox" checked={Boolean(value ?? schema.default)} onChange={(e) => onChange(e.target.checked)} /> {label}</label>;
-  if (["object", "array"].includes(schema.type)) return <label className="config-field config-structured">{label}<textarea rows="5" required={required}
+    <option value="">None</option>{schema.items.enum.map((option) => <option key={option} value={option}>{option}</option>)}</select>;
+  else if (schema.type === "boolean") control = <input id={id} type="checkbox" checked={Boolean(value ?? schema.default)} onChange={(e) => onChange(e.target.checked)} />;
+  else if (["object", "array"].includes(schema.type)) control = <textarea {...inputProps} rows="5"
     value={typeof value === "string" ? value : JSON.stringify(value ?? schema.default ?? (schema.type === "array" ? [] : {}), null, 2)}
-    placeholder={JSON.stringify(schema.default ?? {}, null, 2)} onChange={(e) => onChange(e.target.value)} />{hint}
-    {schema.properties && <details><summary>Supported options</summary>{Object.entries(schema.properties).map(([key, property]) =>
-      <div key={key}><strong>{key}</strong>: {property.enum?.join(" / ") || property.type}
-        {property.minimum !== undefined && ` (${property.minimum}–${property.maximum ?? "∞"})`} — {property.description}</div>)}</details>}</label>;
-  if (schema.type === "integer" || schema.type === "number") return <label className="config-field">{label}<input type="number" value={value ?? schema.default ?? ""}
-    min={schema.minimum} max={schema.maximum} step={schema.type === "integer" ? 1 : "any"} required={required}
-    placeholder={schema.default === undefined ? "" : `Default: ${schema.default}`} onChange={(e) => onChange(e.target.value)} />{hint}</label>;
-  return <label className="config-field">{label}<textarea rows="2" value={value ?? schema.default ?? ""} required={required} onChange={(e) => onChange(e.target.value)} />{hint}</label>;
+    placeholder={JSON.stringify(schema.default ?? {}, null, 2)} onChange={(e) => onChange(e.target.value)} />;
+  else if (schema.type === "integer" || schema.type === "number") control = <input {...inputProps} type="number" value={value ?? schema.default ?? ""}
+    min={schema.minimum} max={schema.maximum} step={schema.type === "integer" ? 1 : "any"}
+    placeholder={schema.default === undefined ? "" : `Default: ${schema.default}`} onChange={(e) => onChange(e.target.value)} />;
+  else control = <textarea {...inputProps} rows="2" value={value ?? schema.default ?? ""} onChange={(e) => onChange(e.target.value)} />;
+  return <div className={`config-field ${schema.type === "object" ? "config-structured" : ""}`}>
+    <div className="config-field-heading"><label htmlFor={id}>{title}</label>
+      <button type="button" className="config-info" aria-label={`Information about ${title}`} aria-haspopup="dialog" onClick={() => dialog.current.showModal()}>i</button></div>
+    {control}
+    <dialog ref={dialog} className="config-help" aria-labelledby={`${id}-help-title`} aria-describedby={`${id}-help-description`}>
+      <div className="config-help-heading"><h2 id={`${id}-help-title`}>{title}</h2><button type="button" onClick={() => dialog.current.close()}>Close</button></div>
+      <p id={`${id}-help-description`}>{schema.description?.trim() || "No description defined"}</p>
+      {schema.type === "array" && schema.items?.enum && <p className="muted">Cmd/Ctrl-click to select multiple options. Select None to disable all options.</p>}
+      {schema.properties && <div className="config-help-options"><h3>Supported options</h3>{Object.entries(schema.properties).map(([key, property]) =>
+        <p key={key}><strong>{key}</strong>: {property.enum?.join(" / ") || property.type}
+          {property.minimum !== undefined && ` (${property.minimum}–${property.maximum ?? "∞"})`}<br />{property.description?.trim() || "No description defined"}</p>)}</div>}
+    </dialog>
+  </div>;
 }
 
 export default function Training({ project }) {
