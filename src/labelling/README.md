@@ -114,3 +114,9 @@ If **Start training** cannot submit the configuration, AI Studio opens a closabl
 Annotation selection uses theme-aware surfaces in the editor, review cards and version comparison. Bounding boxes retain their class colors with contrasting outlines, and class names appear on solid dark badges so they remain readable over bright or dark images.
 
 Training job actions include **↓ Download Model**, **↗ View on MLflow**, and **▥ View live metrics** on the run itself. Live metrics opens TensorBoard's Time Series dashboard with an exact run filter, selecting only that run; the button uses the run's enabled callbacks and compute agent dashboard. New training runs are named `YYMMDD-{project-name}-v{version-number}` with a normalized project name and incrementing training version (including retries). Internal job IDs remain unique. MLflow records the validated training configuration, including defaults, augmentations, callbacks, classes, dataset version and devices, as `config.*` parameters. Existing runs retain their historical names/configuration.
+
+### Theme and layout conventions
+
+Light and dark modes share control dimensions and visible keyboard focus outlines. Small accent text uses a separate contrast color from coral button backgrounds. Lineage cards align content to the left and show readable metadata; UTC timestamps with or without explicit offsets use the same date formatter. Training job metrics expand under **View training metrics**, while model, MLflow, and live-metrics links remain compact on one row.
+
+When reviewing UI changes, check the project list, annotation and Review pages, Dashboard, History, Versions (including previews), Compare, Lineage, Training, and Manage in both themes. Use existing data without altering annotations or publishing extra versions for visual checks. Check populated and empty states where available, and inspect narrow-screen rules separately.

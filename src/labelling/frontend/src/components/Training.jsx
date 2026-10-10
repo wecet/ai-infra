@@ -152,7 +152,7 @@ export default function Training({ project }) {
     {!jobs.length ? <div className="empty"><h2>No training jobs yet</h2><p>Publish a dataset version, choose a model, and start your first run.</p></div> :
       <div className="panel table-wrap"><table><thead><tr><th>STATUS</th><th>RUN / MODEL</th><th>VERSION</th><th>COMPUTE</th><th>RESULT</th></tr></thead><tbody>{jobs.map((job) =>
         <tr key={job.id}><td><span className={`job-status ${job.status}`}>{job.status}</span></td><td><strong>{job.run_name || job.base_model}</strong><div className="muted small">{job.base_model}</div></td><td>{versions.find((v) => v.id === job.version_id)?.name || job.version_id.slice(0,8)}</td>
-          <td>{job.compute_target.kind}{job.compute_target.gpu ? " · GPU" : " · CPU"}</td><td>{job.error || Object.entries(job.metrics).map(([k,v]) => `${k}: ${v}`).join(" · ") || "-"}
+          <td>{job.compute_target.kind}{job.compute_target.gpu ? " · GPU" : " · CPU"}</td><td>{job.error || (Object.keys(job.metrics).length ? <details><summary>View training metrics</summary><dl className="training-metrics">{Object.entries(job.metrics).map(([key, value]) => <div key={key}><dt>{key.replaceAll("_", " ")}</dt><dd>{typeof value === "number" ? Number(value.toPrecision(5)) : String(value)}</dd></div>)}</dl></details> : "-")}
             <div className="training-job-actions">
               {["queued", "running", "succeeded"].includes(job.status) && liveMetricsEnabled(job.hyperparameters, models.find((item) => item.key === job.base_model)) && dashboardUrl(caps, job) &&
                 <a className="button" href={dashboardUrl(caps, job)} target="_blank" rel="noopener noreferrer"><span aria-hidden="true">▥</span> View live metrics</a>}
