@@ -101,7 +101,7 @@ def _archive(project_id, version_id):
     return detail, buffer.getvalue()
 
 
-def _mlflow(job, metrics):
+def _mlflow(job, metrics, config):
     """Best-effort MLflow REST logging; a tracking outage never loses the model artifact."""
     try:
         found = httpx.get(f"{MLFLOW_URL}/api/2.0/mlflow/experiments/get-by-name",
@@ -112,12 +112,13 @@ def _mlflow(job, metrics):
         else: found.raise_for_status(); exp = found.json()["experiment"]["experiment_id"]
         now = int(time.time() * 1000)
         run = httpx.post(f"{MLFLOW_URL}/api/2.0/mlflow/runs/create", json={"experiment_id": exp,
-             "start_time": now, "run_name": job["id"], "tags": [{"key": "project_id", "value": job["project_id"]},
+             "start_time": now, "run_name": job.get("run_name") or job["id"], "tags": [{"key": "project_id", "value": job["project_id"]},
              {"key": "dataset_version", "value": job["version_id"]}]}, timeout=5).json()["run"]
         run_id = run["info"]["run_id"]
         httpx.post(f"{MLFLOW_URL}/api/2.0/mlflow/runs/log-batch", json={"run_id": run_id,
             "metrics": [{"key": k, "value": float(v), "timestamp": now, "step": 0} for k, v in metrics.items()],
-            "params": [{"key": "base_model", "value": job["base_model"]}], "tags": []}, timeout=5).raise_for_status()
+            "params": [{"key": "base_model", "value": job["base_model"]}] +
+                      [{"key": f"config.{key}", "value": json.dumps(value, ensure_ascii=False)} for key, value in config.items()], "tags": []}, timeout=5).raise_for_status()
         httpx.post(f"{MLFLOW_URL}/api/2.0/mlflow/runs/update", json={"run_id": run_id,
             "status": "FINISHED", "end_time": int(time.time() * 1000)}, timeout=5).raise_for_status()
         return f"{exp}:{run_id}"
@@ -143,7 +144,7 @@ def _run(job_id):
                         "class_names": [item["name"] for item in detail["snapshot"]["project"]["classes"]],
                         "devices": [key for key in ("cpu", "gpu") if target.get(key)], **hyperparameters}
         manifest = {"job_id": job_id, "annotation_type": job["task_type"], "base_model": job["base_model"],
-                    "hyperparameters": hyperparameters, "config": model_config,
+                    "run_name": job["run_name"] or job_id, "hyperparameters": hyperparameters, "config": model_config,
                     "devices": model_config["devices"], "dataset_name": detail["name"]}
         response = httpx.post(f"{agent}/api/v1/train", data={"manifest": json.dumps(manifest)},
                               files={"dataset": (f"{detail['name']}.zip", archive, "application/zip")}, timeout=3600)
@@ -157,7 +158,7 @@ def _run(job_id):
         filename = re.sub(r"[^A-Za-z0-9._-]+", "_", artifact_data.get("filename", "model.bin"))[:150] or "model.bin"
         artifact = output / filename
         artifact.write_bytes(base64.b64decode(artifact_data["content_base64"], validate=True))
-        run_id = _mlflow(job, result.get("metrics", {}))
+        run_id = _mlflow(job, result.get("metrics", {}), result.get("config", model_config))
         with database() as db:
             completed_at = datetime.now(timezone.utc).isoformat()
             db.execute("""UPDATE training_jobs SET status='succeeded',metrics=?,artifact_path=?,
@@ -198,6 +199,7 @@ def jobs(project_id: str):
 def create_job(project_id: str, payload: JobCreate):
     target = payload.compute.model_dump(); agent = _agent_url(target); caps = _capabilities(agent)
     with database() as db:
+        db.execute("BEGIN IMMEDIATE")
         project = get_project(db, project_id)
         version = db.execute("SELECT id FROM dataset_versions WHERE id=? AND project_id=?", (payload.version_id, project_id)).fetchone()
         if not version: raise HTTPException(404, "Published version not found")
@@ -207,9 +209,16 @@ def create_job(project_id: str, payload: JobCreate):
         if payload.base_model not in installed: raise HTTPException(422, "Selected model is not installed on this compute agent")
         if target["gpu"] and not caps["gpu"]["available"]: raise HTTPException(422, caps["gpu"].get("reason", "GPU unavailable"))
         job_id = uuid.uuid4().hex
+        slug = re.sub(r"[^a-z0-9]+", "-", project["name"].lower()).strip("-")[:80] or "project"
+        prefix = f"{datetime.now(timezone.utc).strftime('%y%m%d')}-{slug}-v"
+        number = db.execute("SELECT COUNT(*)+1 FROM training_jobs WHERE project_id=?", (project_id,)).fetchone()[0]
+        run_name = f"{prefix}{number}"
+        while db.execute("SELECT 1 FROM training_jobs WHERE run_name=?", (run_name,)).fetchone():
+            number += 1
+            run_name = f"{prefix}{number}"
         db.execute("""INSERT INTO training_jobs (id,project_id,version_id,task_type,base_model,hyperparameters,
-            compute_target,status) VALUES (?,?,?,?,?,?,?,'queued')""", (job_id, project_id, payload.version_id,
-            project["annotation_type"], payload.base_model, json.dumps(payload.hyperparameters), json.dumps(target)))
+            compute_target,run_name,tensorboard_url,status) VALUES (?,?,?,?,?,?,?,?,?,'queued')""", (job_id, project_id, payload.version_id,
+            project["annotation_type"], payload.base_model, json.dumps(payload.hyperparameters), json.dumps(target), run_name, caps.get("tensorboard", {}).get("url", "") if caps.get("tensorboard", {}).get("available") else ""))
         row = db.execute("SELECT * FROM training_jobs WHERE id=?", (job_id,)).fetchone()
     threading.Thread(target=_run, args=(job_id,), daemon=True).start()
     return _job(row)

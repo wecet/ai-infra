@@ -109,6 +109,10 @@ def train(manifest: str = Form(...), dataset: UploadFile = File(...)):
     job_id = config.get("job_id", uuid.uuid4().hex)
     if not isinstance(job_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", job_id):
         raise HTTPException(422, "Invalid job ID")
+    run_name = config.get("run_name", job_id)
+    if not isinstance(run_name, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", run_name):
+        raise HTTPException(422, "Invalid run name")
+    effective = model_config
     work = Path(tempfile.mkdtemp(prefix="training-"))
     try:
         archive = work / "dataset.zip"
@@ -121,7 +125,7 @@ def train(manifest: str = Form(...), dataset: UploadFile = File(...)):
         if len(files) != 1: raise HTTPException(422, "Dataset must contain one COCO annotation file")
         coco = json.loads(files[0].read_text())
         if model_class:
-            output = RUNS_ROOT / job_id
+            output = RUNS_ROOT / run_name
             try: output.mkdir(parents=True, exist_ok=False)
             except FileExistsError as exc: raise HTTPException(409, "Job ID already has a training run") from exc
             effective = model_config.model_copy(update={"dataset_path": archive, "output_path": output})
@@ -146,7 +150,7 @@ def train(manifest: str = Form(...), dataset: UploadFile = File(...)):
             artifact = {"filename": "model.json", "media_type": "application/json",
                         "content_base64": base64.b64encode(json.dumps(payload, indent=2).encode()).decode()}
             summary = "Reference model trained successfully"
-        return {"status": "succeeded", "metrics": metrics, "artifact": artifact, "summary": summary}
+        return {"status": "succeeded", "metrics": metrics, "artifact": artifact, "summary": summary, "config": effective.model_dump(mode="json")}
     except HTTPException:
         raise
     except Exception as exc:

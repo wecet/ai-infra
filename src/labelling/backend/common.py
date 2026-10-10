@@ -109,6 +109,10 @@ def init_db():
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
         ''')
         # Additive migrations preserve annotations from existing deployments.
+        if 'tensorboard_url' not in {r['name'] for r in db.execute('PRAGMA table_info(training_jobs)')}:
+            db.execute("ALTER TABLE training_jobs ADD COLUMN tensorboard_url TEXT NOT NULL DEFAULT ''")
+        if 'run_name' not in {r['name'] for r in db.execute('PRAGMA table_info(training_jobs)')}:
+            db.execute("ALTER TABLE training_jobs ADD COLUMN run_name TEXT NOT NULL DEFAULT ''")
         if 'annotation_type' not in {r['name'] for r in db.execute('PRAGMA table_info(projects)')}:
             db.execute("ALTER TABLE projects ADD COLUMN annotation_type TEXT NOT NULL DEFAULT 'object_detection'")
         project_columns = {r['name'] for r in db.execute('PRAGMA table_info(projects)')}

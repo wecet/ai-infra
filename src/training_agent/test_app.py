@@ -96,14 +96,16 @@ def test_workbench_logs_persist_and_job_paths_are_validated(tmp_path, monkeypatc
     monkeypatch.setattr(app, "load_model", lambda workbench: LoggingModel)
     client = TestClient(app.app)
     assert client.get("/api/v1/capabilities").json()["tensorboard"] == {"available": True, "url": "http://localhost:6006"}
-    manifest = {"job_id": "run-123", "annotation_type": "image_classification", "base_model": "workspace:test",
+    manifest = {"job_id": "run-123", "run_name": "261010-test-v1", "annotation_type": "image_classification", "base_model": "workspace:test",
                 "devices": ["cpu"], "config": {"dataset_path": "/dataset.zip", "output_path": "/output",
                 "project_id": "project", "dataset_version_id": "version", "class_names": ["coral"]}}
     response = client.post("/api/v1/train", data={"manifest": json.dumps(manifest)},
                            files={"dataset": ("dataset.zip", dataset_zip(), "application/zip")})
     assert response.status_code == 200, response.text
-    assert (app.RUNS_ROOT / "run-123/tensorboard/events.test").read_bytes() == b"event data"
-    assert not (app.RUNS_ROOT / "run-123/model.bin").exists()
+    assert (app.RUNS_ROOT / "261010-test-v1/tensorboard/events.test").read_bytes() == b"event data"
+    assert not (app.RUNS_ROOT / "261010-test-v1/model.bin").exists()
+    assert response.json()["config"]["output_path"] == str(app.RUNS_ROOT / "261010-test-v1")
+    assert response.json()["config"]["epochs"] == BaseModelConfig.model_fields["epochs"].default
     assert not Path(manifest["config"]["dataset_path"]).exists()
     assert client.post("/api/v1/train", data={"manifest": json.dumps(manifest)},
                        files={"dataset": ("dataset.zip", dataset_zip(), "application/zip")}).status_code == 409
