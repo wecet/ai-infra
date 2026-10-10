@@ -108,6 +108,8 @@ node --test src/labelling/frontend/tests/training-config.test.js
 
 ### Field descriptions in AI Studio
 
+Both demo configs provide descriptions for every field, including inherited training settings and model-specific inference options. Shared descriptions live in `BaseModelConfig` and `demo_support/config.py`; task-specific descriptions live in each model's `config.py`.
+
 Use Pydantic's `Field(description="...")` to explain a configuration variable:
 
 ```python

@@ -21,20 +21,20 @@ class BaseModelConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
-    dataset_path: Path
-    output_path: Path
-    mlflow_url: AnyHttpUrl | None = None
-    project_id: str = Field(min_length=1)
-    dataset_version_id: str = Field(min_length=1)
-    class_names: tuple[str, ...] = Field(min_length=1)
-    devices: tuple[str, ...] = ("cpu",)
-    epochs: int = Field(default=10, ge=1)
-    batch_size: int = Field(default=32, ge=1)
-    learning_rate: float = Field(default=1e-3, gt=0)
-    weight_decay: float = Field(default=0.0, ge=0)
-    image_size: int = Field(default=224, ge=1)
-    random_seed: int = 42
-    validation_split: float = Field(default=0.2, ge=0, lt=1)
+    dataset_path: Path = Field(description="Path to the immutable dataset archive used for this run. AI Studio fills this from the published dataset version.")
+    output_path: Path = Field(description="Directory for model artifacts and training logs. The compute agent assigns a separate directory for each run.")
+    mlflow_url: AnyHttpUrl | None = Field(default=None, description="MLflow tracking server URL for recording run metrics and artifacts. AI Studio supplies this infrastructure setting.")
+    project_id: str = Field(min_length=1, description="Identifier of the AI Studio project that owns this training run.")
+    dataset_version_id: str = Field(min_length=1, description="Identifier of the frozen dataset version used for reproducible training.")
+    class_names: tuple[str, ...] = Field(min_length=1, description="Ordered class names from the published dataset. Their order determines the model output label mapping.")
+    devices: tuple[str, ...] = Field(default=("cpu",), description="Requested compute devices: cpu or gpu. Availability depends on the compute agent and model implementation.")
+    epochs: int = Field(default=10, ge=1, description="Number of complete passes through the training data.")
+    batch_size: int = Field(default=32, ge=1, description="Number of training images processed together in each optimizer step. Larger batches require more memory.")
+    learning_rate: float = Field(default=1e-3, gt=0, description="Optimizer step size controlling how much model weights change during training. Lower values make smaller updates.")
+    weight_decay: float = Field(default=0.0, ge=0, description="Optimizer penalty on large weights to help limit overfitting. Set to 0 to disable weight decay.")
+    image_size: int = Field(default=224, ge=1, description="Target image size in pixels. The model implementation determines how images are resized.")
+    random_seed: int = Field(default=42, description="Seed used for model initialization, dataset splitting, shuffling and random augmentations. Reusing it helps reproduce runs; exact results can still vary across devices.")
+    validation_split: float = Field(default=0.2, ge=0, lt=1, description="Fraction of images held out for validation loss rather than optimizer updates. For example, 0.2 requests 20 percent; set to 0 to disable validation. Small datasets may limit the holdout size.")
 
 
 @dataclass(frozen=True)

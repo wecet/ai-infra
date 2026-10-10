@@ -20,5 +20,5 @@ class AugmentationOptions(TypedDict, total=False):
 class DemoConfig(BaseModelConfig):
     augmentations: AugmentationOptions = Field(default={}, title="Augmentations", description="Training-only augmentation options as a JSON object; an empty object disables augmentations.")
     callbacks: list[Literal["tensorboard", "gradcam"]] = Field(default=["tensorboard", "gradcam"], description="Enabled callbacks; select none to disable both. Grad-CAM images require TensorBoard.")
-    gradcam_every_n_epochs: int = Field(default=1, ge=1)
-    gradcam_samples: int = Field(default=1, ge=1, le=8)
+    gradcam_every_n_epochs: int = Field(default=1, ge=1, description="Generate Grad-CAM explanations every this many completed epochs. Set to 1 for every epoch. Requires both tensorboard and gradcam callbacks.")
+    gradcam_samples: int = Field(default=1, ge=1, le=8, description="Maximum number of images to explain at each Grad-CAM logging interval. Uses unaugmented validation images, or training images when no validation set exists. More samples add computation.")
