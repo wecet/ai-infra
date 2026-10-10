@@ -101,7 +101,8 @@ def train(manifest: str = Form(...), dataset: UploadFile = File(...)):
     if not builtin and not workbench: raise HTTPException(422, "Model workbench is unavailable on this compute agent")
     if workbench and workbench["task"] != task: raise HTTPException(422, "Workbench task does not match this project")
     if "gpu" in config.get("devices", []) and not gpu_available(): raise HTTPException(409, "GPU is unavailable on this compute agent")
-    model_class = load_model(workbench) if workbench else None
+    try: model_class = load_model(workbench) if workbench else None
+    except Exception as exc: raise HTTPException(500, f"Model could not be loaded: {type(exc).__name__}: {exc}") from exc
     config_type = model_class.config_type if model_class else BaseModelConfig
     try: model_config = config_type.model_validate(config.get("config", {}))
     except Exception as exc: raise HTTPException(422, f"Invalid model configuration: {exc}") from exc
@@ -146,4 +147,8 @@ def train(manifest: str = Form(...), dataset: UploadFile = File(...)):
                         "content_base64": base64.b64encode(json.dumps(payload, indent=2).encode()).decode()}
             summary = "Reference model trained successfully"
         return {"status": "succeeded", "metrics": metrics, "artifact": artifact, "summary": summary}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(500, f"Training failed: {type(exc).__name__}: {exc}") from exc
     finally: shutil.rmtree(work, ignore_errors=True)

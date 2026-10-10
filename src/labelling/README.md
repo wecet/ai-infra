@@ -106,3 +106,7 @@ npm run build
 ```
 
 API tests cover persisted progress, immutable versions, version comparison, end-to-end lineage, class management and revision remapping, bulk review, search/filter metadata, project ordering and merging, review workflows, quality findings, AI instructions, project ZIP imports, dataset history, deletion restoration, comments, duplicate analysis, concurrency, Dashboard counts, and export/import round trips.
+
+### Training failure recovery
+
+If **Start training** cannot submit the configuration, AI Studio opens a closable error popup and keeps the form available. If a queued trainer fails later, polling opens a popup with the trainer's error message and records the failed run in **Training jobs**. Close with **Close** or **Escape**, correct the configuration or dataset, then start a new run. The same failed job is not repeatedly shown during polling; earlier failures stay in the jobs table when you reopen the page.

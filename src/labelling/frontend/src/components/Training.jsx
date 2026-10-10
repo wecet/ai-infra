@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useState, useId, useRef } from "react";
+import TrainingErrorDialog from "./TrainingErrorDialog";
+import { newTrainingFailures } from "../training-errors";
 import { api } from "../api";
 import { managedFields, resolveSchema, schemaDefaults, normalizeParams, liveMetricsEnabled } from "../training-config";
 
@@ -57,6 +59,14 @@ export default function Training({ project }) {
   const [template, setTemplate] = useState(null);
   const [busy, setBusy] = useState(false); const [error, setError] = useState("");
   const [probe, setProbe] = useState("");
+  const [trainingErrors, setTrainingErrors] = useState([]);
+  const seenJobs = useRef(null);
+  function updateJobs(nextJobs) {
+    const failures = newTrainingFailures(nextJobs, seenJobs.current);
+    seenJobs.current = new Map(nextJobs.map((job) => [job.id, job.status]));
+    setJobs(nextJobs);
+    if (failures.length) setTrainingErrors((current) => [...current, ...failures]);
+  }
   const tensorboardUrl = dashboardUrl(caps);
   const models = useMemo(() => [
     ...Object.values(caps?.models || {}).flat(), ...(caps?.workbenches || []),
@@ -68,7 +78,7 @@ export default function Training({ project }) {
       const [nextVersions, nextJobs, nextCaps] = await Promise.all([
         api(`/projects/${project.id}/versions`), api(`/projects/${project.id}/training/jobs`), api("/training/capabilities"),
       ]);
-      setVersions(nextVersions); setJobs(nextJobs); setCaps(nextCaps);
+      setVersions(nextVersions); updateJobs(nextJobs); setCaps(nextCaps);
       setVersion((value) => value || nextVersions[0]?.id || "");
       setModel((current) => {
         const candidates = [...Object.values(nextCaps.models || {}).flat(), ...(nextCaps.workbenches || [])];
@@ -78,10 +88,10 @@ export default function Training({ project }) {
     } catch (e) { setError(e.message); }
   }
   async function refreshJobs() {
-    try { setJobs(await api(`/projects/${project.id}/training/jobs`)); }
+    try { updateJobs(await api(`/projects/${project.id}/training/jobs`)); }
     catch (e) { setError(e.message); }
   }
-  useEffect(() => { load(); const timer = setInterval(refreshJobs, 4000); return () => clearInterval(timer); }, [project.id]);
+  useEffect(() => { seenJobs.current = null; setTrainingErrors([]); load(); const timer = setInterval(refreshJobs, 4000); return () => clearInterval(timer); }, [project.id]);
   useEffect(() => {
     if (!version) { setTemplate(null); return; }
     api(`/projects/${project.id}/training/template?version_id=${encodeURIComponent(version)}`)
@@ -100,9 +110,10 @@ export default function Training({ project }) {
       await api(`/projects/${project.id}/training/jobs`, { method: "POST", body: JSON.stringify({
       version_id: version, base_model: model, hyperparameters,
       compute: { kind, cpu: kind === "local" ? cpu : true, gpu: kind === "local" ? gpu : false, endpoint },
-    }) }); await refreshJobs(); } catch (e) { setError(e.message); } finally { setBusy(false); }
+    }) }); await refreshJobs(); } catch (e) { setTrainingErrors((current) => [...current, { message: e.message || "Training could not be started." }]); } finally { setBusy(false); }
   }
   return <div className="training-layout">
+    <TrainingErrorDialog error={trainingErrors[0]} onClose={() => setTrainingErrors((current) => current.slice(1))} />
     <div className="page-heading"><div><h2>Model training</h2><p className="muted">Train against an immutable dataset version and track the run in MLflow.</p></div>
       {tensorboardUrl && liveMetricsEnabled(params, selectedModel) && <a className="button" href={tensorboardUrl} target="_blank" rel="noopener noreferrer">View live metrics</a>}</div>
     {error && <div className="alert">{error}</div>}

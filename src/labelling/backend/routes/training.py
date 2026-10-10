@@ -147,6 +147,10 @@ def _run(job_id):
                     "devices": model_config["devices"], "dataset_name": detail["name"]}
         response = httpx.post(f"{agent}/api/v1/train", data={"manifest": json.dumps(manifest)},
                               files={"dataset": (f"{detail['name']}.zip", archive, "application/zip")}, timeout=3600)
+        if response.is_error:
+            try: detail = response.json().get("detail")
+            except ValueError: detail = None
+            if isinstance(detail, str) and detail.strip(): raise RuntimeError(detail)
         response.raise_for_status(); result = response.json()
         output = DATA / "training" / job_id; output.mkdir(parents=True, exist_ok=True)
         artifact_data = result["artifact"]

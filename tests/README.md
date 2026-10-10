@@ -115,3 +115,7 @@ gradcam_samples: int = Field(default=1, ge=1, le=8, description="Number of valid
 ```
 
 AI Studio shows this description in a closable popup beside the field label. Fields without a description show `No description defined`.
+
+### Trainer errors
+
+Raise a normal Python exception with a useful message when training cannot continue. The agent returns the exception type and message as an HTTP error, and AI Studio records the run as failed and shows its error in a closable popup. The temporary dataset is cleaned up, the agent remains available, and the form retains your configuration for retry. Existing failed runs remain visible in the jobs table without reopening popups on every refresh.

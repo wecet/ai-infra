@@ -110,3 +110,32 @@ def test_workbench_logs_persist_and_job_paths_are_validated(tmp_path, monkeypatc
     manifest["job_id"] = "../outside"
     assert client.post("/api/v1/train", data={"manifest": json.dumps(manifest)},
                        files={"dataset": ("dataset.zip", dataset_zip(), "application/zip")}).status_code == 422
+
+
+def test_trainer_failure_returns_details_and_agent_remains_usable(tmp_path, monkeypatch):
+    from ai_interfaces import BaseModelConfig
+
+    class FailingModel:
+        config_type = BaseModelConfig
+
+        def __init__(self, config):
+            pass
+
+        def train(self, context):
+            raise RuntimeError("Demo trainer failed: invalid batch")
+
+    monkeypatch.setattr(app, "RUNS_ROOT", tmp_path / "runs")
+    monkeypatch.setattr(app, "find_workbench", lambda key: {"task": "image_classification"})
+    monkeypatch.setattr(app, "load_model", lambda workbench: FailingModel)
+    client = TestClient(app.app)
+    manifest = {"job_id": "failed-run", "annotation_type": "image_classification", "base_model": "workspace:test",
+                "devices": ["cpu"], "config": {"dataset_path": "/dataset.zip", "output_path": "/output",
+                "project_id": "project", "dataset_version_id": "version", "class_names": ["coral"]}}
+    response = client.post("/api/v1/train", data={"manifest": json.dumps(manifest)},
+                           files={"dataset": ("dataset.zip", dataset_zip(), "application/zip")})
+    assert response.status_code == 500
+    assert response.json()["detail"] == "Training failed: RuntimeError: Demo trainer failed: invalid batch"
+    assert client.get("/health").status_code == 200
+    manifest["base_model"] = "histogram-centroid-v1"
+    assert client.post("/api/v1/train", data={"manifest": json.dumps(manifest)},
+                       files={"dataset": ("dataset.zip", dataset_zip(), "application/zip")}).status_code == 200
