@@ -440,5 +440,5 @@ h2 { font-size: 15px; letter-spacing: -.15px; }
 .zoom-controls { align-items: center; gap: 4px; flex-wrap: wrap; }
 .zoom-controls button.toolbar-text { width: auto; padding-inline: 10px; }
 
-.training-job-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
-.training-job-actions .button { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.training-job-actions { display: flex; flex-wrap: nowrap; gap: 6px; margin-top: 6px; }
+.training-job-actions .button { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; min-height: 28px; padding: 4px 8px; font-size: 12px; line-height: 1.4; font-weight: 600; white-space: nowrap; }
