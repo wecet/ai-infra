@@ -65,7 +65,7 @@ def _agent_url(target):
 
 def _capabilities(url):
     try:
-        response = httpx.get(f"{url}/api/v1/capabilities", timeout=4)
+        response = httpx.get(f"{url}/api/v1/capabilities", timeout=httpx.Timeout(20, connect=4))
         response.raise_for_status(); return response.json()
     except (httpx.HTTPError, ValueError) as exc:
         raise HTTPException(502, f"Compute agent is unavailable: {exc}") from exc
