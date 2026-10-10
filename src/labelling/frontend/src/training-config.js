@@ -48,3 +48,17 @@ export function liveMetricsEnabled(values, model) {
   const callbacks = values.callbacks ?? schemaDefaults(model).callbacks;
   return Array.isArray(callbacks) && callbacks.includes("tensorboard") && callbacks.includes("gradcam");
 }
+
+export function dashboardUrl(caps, job) {
+  const endpoint = job.tensorboard_url || (job.compute_target.kind === "local" && caps?.tensorboard?.available ? caps.tensorboard.url : "");
+  if (!endpoint) return null;
+  try {
+    const url = new URL(endpoint);
+    if (!["http:", "https:"].includes(url.protocol)) return null;
+    const run = `${job.run_name || job.id}/tensorboard`;
+    const escaped = run.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    url.searchParams.set("runFilter", `^${escaped}$`);
+    url.hash = "timeseries";
+    return url.href;
+  } catch { return null; }
+}

@@ -26,3 +26,16 @@ test("metrics button hides when either callback is disabled", () => {
   for (const callbacks of [[], ["tensorboard"], ["gradcam"]]) assert.equal(liveMetricsEnabled({ callbacks }, model), false);
   assert.equal(liveMetricsEnabled({}, { config_schema: {} }), false);
 });
+
+
+test("TensorBoard links target one exact run on Time Series and retain the job's agent", async () => {
+  const { dashboardUrl } = await import("../src/training-config.js");
+  const job = { id: "id", run_name: "261010-test.project-v1", tensorboard_url: "http://agent:6006/", compute_target: { kind: "remote" } };
+  const url = new URL(dashboardUrl(null, job));
+  assert.equal(url.hash, "#timeseries");
+  const filter = new RegExp(url.searchParams.get("runFilter"));
+  assert.equal(filter.test("261010-test.project-v1/tensorboard"), true);
+  assert.equal(filter.test("261010-testXproject-v1/tensorboard"), false);
+  assert.equal(filter.test("261010-other-v1/tensorboard"), false);
+  assert.equal(dashboardUrl(null, { ...job, tensorboard_url: "javascript:alert(1)" }), null);
+});

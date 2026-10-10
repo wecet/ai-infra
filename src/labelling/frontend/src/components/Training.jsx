@@ -2,17 +2,9 @@ import React, { useEffect, useMemo, useState, useId, useRef } from "react";
 import TrainingErrorDialog from "./TrainingErrorDialog";
 import { newTrainingFailures } from "../training-errors";
 import { api } from "../api";
-import { managedFields, resolveSchema, schemaDefaults, normalizeParams, liveMetricsEnabled } from "../training-config";
+import { managedFields, resolveSchema, schemaDefaults, normalizeParams, liveMetricsEnabled, dashboardUrl } from "../training-config";
 
 const defaults = { epochs: 1, batch_size: 32, learning_rate: 0.001, image_size: 224 };
-
-function dashboardUrl(caps) {
-  if (!caps?.tensorboard?.available) return null;
-  try {
-    const url = new URL(caps.tensorboard.url);
-    return ["http:", "https:"].includes(url.protocol) ? url.href : null;
-  } catch { return null; }
-}
 
 function ConfigField({ name, schema, value, required, onChange }) {
   const id = useId();
@@ -67,7 +59,6 @@ export default function Training({ project }) {
     setJobs(nextJobs);
     if (failures.length) setTrainingErrors((current) => [...current, ...failures]);
   }
-  const tensorboardUrl = dashboardUrl(caps);
   const models = useMemo(() => [
     ...Object.values(caps?.models || {}).flat(), ...(caps?.workbenches || []),
   ], [caps]);
@@ -115,7 +106,7 @@ export default function Training({ project }) {
   return <div className="training-layout">
     <TrainingErrorDialog error={trainingErrors[0]} onClose={() => setTrainingErrors((current) => current.slice(1))} />
     <div className="page-heading"><div><h2>Model training</h2><p className="muted">Train against an immutable dataset version and track the run in MLflow.</p></div>
-      {tensorboardUrl && liveMetricsEnabled(params, selectedModel) && <a className="button" href={tensorboardUrl} target="_blank" rel="noopener noreferrer">View live metrics</a>}</div>
+      </div>
     {error && <div className="alert">{error}</div>}
     <form className="panel training-form" onSubmit={submit}>
       <section><div className="eyebrow">DATA &amp; MODEL</div>
@@ -159,9 +150,14 @@ export default function Training({ project }) {
     </form>
     <div className="page-heading jobs-heading"><div><h2>Training jobs</h2><p className="muted">Jobs continue on the selected compute agent when you leave this page.</p></div></div>
     {!jobs.length ? <div className="empty"><h2>No training jobs yet</h2><p>Publish a dataset version, choose a model, and start your first run.</p></div> :
-      <div className="panel table-wrap"><table><thead><tr><th>STATUS</th><th>MODEL</th><th>VERSION</th><th>COMPUTE</th><th>RESULT</th></tr></thead><tbody>{jobs.map((job) =>
-        <tr key={job.id}><td><span className={`job-status ${job.status}`}>{job.status}</span></td><td>{job.base_model}</td><td>{versions.find((v) => v.id === job.version_id)?.name || job.version_id.slice(0,8)}</td>
+      <div className="panel table-wrap"><table><thead><tr><th>STATUS</th><th>RUN / MODEL</th><th>VERSION</th><th>COMPUTE</th><th>RESULT</th></tr></thead><tbody>{jobs.map((job) =>
+        <tr key={job.id}><td><span className={`job-status ${job.status}`}>{job.status}</span></td><td><strong>{job.run_name || job.base_model}</strong><div className="muted small">{job.base_model}</div></td><td>{versions.find((v) => v.id === job.version_id)?.name || job.version_id.slice(0,8)}</td>
           <td>{job.compute_target.kind}{job.compute_target.gpu ? " · GPU" : " · CPU"}</td><td>{job.error || Object.entries(job.metrics).map(([k,v]) => `${k}: ${v}`).join(" · ") || "-"}
-            {job.artifact_available && <> · <a href={`/api/projects/${project.id}/training/jobs/${job.id}/artifact`}>model</a></>}{job.mlflow_url && <> · <a href={job.mlflow_url} target="_blank" rel="noreferrer">MLflow</a></>}</td></tr>)}</tbody></table></div>}
+            <div className="training-job-actions">
+              {["queued", "running", "succeeded"].includes(job.status) && liveMetricsEnabled(job.hyperparameters, models.find((item) => item.key === job.base_model)) && dashboardUrl(caps, job) &&
+                <a className="button" href={dashboardUrl(caps, job)} target="_blank" rel="noopener noreferrer"><span aria-hidden="true">▥</span> View live metrics</a>}
+              {job.artifact_available && <a className="button" href={`/api/projects/${project.id}/training/jobs/${job.id}/artifact`}><span aria-hidden="true">↓</span> Download Model</a>}
+              {job.mlflow_url && <a className="button" href={job.mlflow_url} target="_blank" rel="noopener noreferrer"><span aria-hidden="true">↗</span> View on MLflow</a>}
+            </div></td></tr>)}</tbody></table></div>}
   </div>;
 }
