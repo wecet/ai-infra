@@ -1,5 +1,6 @@
 """Shared demo training loop with live TensorBoard metrics and Grad-CAM images."""
 import json
+import time
 from contextlib import nullcontext
 
 import torch
@@ -37,28 +38,41 @@ def train(model, context, loss_for, augmentor):
             writer.flush()
         for epoch in range(1, config.epochs + 1):
             model.network.train()
-            total = 0.0
+            started = time.perf_counter()
+            total, details = 0.0, {}
             for images, targets in loader:
                 optimizer.zero_grad()
-                loss = loss_for(model.network, images, targets, device)
+                loss, batch_metrics = loss_for(model.network, images, targets, device)
                 if not torch.isfinite(loss):
                     raise ValueError("Training loss is not finite")
                 loss.backward()
                 optimizer.step()
                 total += loss.item() * len(images)
+                for key, value in batch_metrics.items():
+                    details[key] = details.get(key, 0.0) + value * len(images)
                 step += 1
                 if writer:
                     writer.add_scalar("Loss/batch", loss.item(), step)
                     writer.flush()
             metrics["train_loss"] = total / len(training)
+            metrics.update({f"train_{key}": value / len(training) for key, value in details.items()})
             if len(validation):
                 # Detection returns losses in train mode; this backbone has no BatchNorm/dropout.
                 model.network.train(model.descriptor().task == "object_detection")
                 with torch.no_grad():
-                    total = sum(loss_for(model.network, images, targets, device).item() * len(images)
-                                for images, targets in DataLoader(validation, batch_size=config.batch_size, collate_fn=collate))
+                    total, details = 0.0, {}
+                    for images, targets in DataLoader(validation, batch_size=config.batch_size, collate_fn=collate):
+                        loss, batch_metrics = loss_for(model.network, images, targets, device)
+                        total += loss.item() * len(images)
+                        for key, value in batch_metrics.items():
+                            details[key] = details.get(key, 0.0) + value * len(images)
                 metrics["validation_loss"] = total / len(validation)
+                metrics.update({f"validation_{key}": value / len(validation) for key, value in details.items()})
+            metrics["epoch_seconds"] = time.perf_counter() - started
+            metrics["learning_rate"] = optimizer.param_groups[0]["lr"]
             if writer:
+                for key, value in metrics.items():
+                    writer.add_scalar(f"Metrics/{key}", value, epoch)
                 writer.add_scalar("Loss/train", metrics["train_loss"], epoch)
                 if "validation_loss" in metrics:
                     writer.add_scalar("Loss/validation", metrics["validation_loss"], epoch)

@@ -5,7 +5,8 @@ from pytorch_detection.augmentor import Augmentor
 def loss_for(network, images, targets, device):
     images = [image.to(device) for image in images]
     targets = [{name: value.to(device) for name, value in target.items()} for target in targets]
-    return sum(network(images, targets).values())
+    losses = network(images, targets)
+    return sum(losses.values()), {key: value.detach().item() for key, value in losses.items()}
 
 
 def train(model, context):

@@ -6,7 +6,11 @@ from pytorch_classification.augmentor import Augmentor
 
 
 def loss_for(network, images, targets, device):
-    return binary_cross_entropy_with_logits(network(torch.stack(images).to(device)), torch.stack(targets).to(device))
+    logits = network(torch.stack(images).to(device))
+    labels = torch.stack(targets).to(device)
+    loss = binary_cross_entropy_with_logits(logits, labels)
+    accuracy = ((logits.detach().sigmoid() >= 0.5) == labels.bool()).float().mean()
+    return loss, {"label_accuracy": accuracy.item()}
 
 
 def train(model, context):

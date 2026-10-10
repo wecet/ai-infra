@@ -74,8 +74,14 @@ def demo():
             assert result.artifact.path.is_relative_to(output) and result.artifact.path.is_file()
             assert all(math.isfinite(value) for value in result.metrics.values())
             assert "validation_loss" in result.metrics
+            assert {"epoch_seconds", "learning_rate"} <= result.metrics.keys()
+            if task == "image_classification":
+                assert 0 <= result.metrics["validation_label_accuracy"] <= 1
+            else:
+                assert {"train_loss_classifier", "validation_loss_box_reg", "train_loss_objectness", "validation_loss_rpn_box_reg"} <= result.metrics.keys()
             events = EventAccumulator(str(output / "tensorboard"), size_guidance={"images": 0}).Reload()
             assert {"Loss/batch", "Loss/train", "Loss/validation", "LearningRate"} <= set(events.Tags()["scalars"])
+            assert {f"Metrics/{key}" for key in result.metrics} <= set(events.Tags()["scalars"])
             for tag in ("Loss/train", "Loss/validation"):
                 values = events.Scalars(tag)
                 assert [item.step for item in values] == [1, 2]

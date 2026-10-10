@@ -121,3 +121,5 @@ AI Studio shows this description in a closable popup beside the field label. Fie
 ### Trainer errors
 
 Raise a normal Python exception with a useful message when training cannot continue. The agent returns the exception type and message as an HTTP error, and AI Studio records the run as failed and shows its error in a closable popup. The temporary dataset is cleaned up, the agent remains available, and the form retains your configuration for retry. Existing failed runs remain visible in the jobs table without reopening popups on every refresh.
+
+TensorBoard's **Time Series** view includes batch loss, epoch training and validation loss, learning rate, epoch duration, and Grad-CAM images. Classification also logs per-label binary accuracy (at threshold 0.5); detection logs classifier, box regression, objectness and RPN box regression loss components for training and validation. The same final epoch metrics are recorded in MLflow. Validation metrics require a nonempty validation split; disabled validation does not produce invented validation values.
