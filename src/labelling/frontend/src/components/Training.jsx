@@ -13,27 +13,27 @@ function dashboardUrl(caps) {
 }
 
 function ConfigField({ name, schema, value, required, onChange }) {
-  const label = schema.title || name.replaceAll("_", " ");
+  const label = <span className="config-field-title">{schema.title || name.replaceAll("_", " ")}</span>;
   const hint = schema.description && <small className="muted">{schema.description}</small>;
-  if (schema.enum) return <label>{label}<select value={value ?? schema.default ?? ""} required={required} onChange={(e) => onChange(e.target.value)}>
+  if (schema.enum) return <label className="config-field">{label}<select value={value ?? schema.default ?? ""} required={required} onChange={(e) => onChange(e.target.value)}>
     {schema.default !== undefined && <option value="">Use default ({String(schema.default)})</option>}
     {schema.enum.map((option) => <option key={String(option)} value={option}>{String(option)}</option>)}</select>{hint}</label>;
-  if (schema.type === "array" && schema.items?.enum) return <label>{label}<select multiple size={Math.min(5, schema.items.enum.length + 1)}
+  if (schema.type === "array" && schema.items?.enum) return <label className="config-field">{label}<select multiple size={Math.min(5, schema.items.enum.length + 1)}
     value={(value ?? schema.default ?? []).length ? (value ?? schema.default) : [""]}
     onChange={(e) => onChange(Array.from(e.target.selectedOptions, (option) => option.value).filter(Boolean))}>
     <option value="">None</option>{schema.items.enum.map((option) => <option key={option} value={option}>{option}</option>)}</select>{hint}
     <small className="muted">Cmd/Ctrl-click to select multiple callbacks.</small></label>;
   if (schema.type === "boolean") return <label className="checkbox-label config-checkbox"><input type="checkbox" checked={Boolean(value ?? schema.default)} onChange={(e) => onChange(e.target.checked)} /> {label}</label>;
-  if (["object", "array"].includes(schema.type)) return <label className="config-structured">{label}<textarea rows="5" required={required}
+  if (["object", "array"].includes(schema.type)) return <label className="config-field config-structured">{label}<textarea rows="5" required={required}
     value={typeof value === "string" ? value : JSON.stringify(value ?? schema.default ?? (schema.type === "array" ? [] : {}), null, 2)}
     placeholder={JSON.stringify(schema.default ?? {}, null, 2)} onChange={(e) => onChange(e.target.value)} />{hint}
     {schema.properties && <details><summary>Supported options</summary>{Object.entries(schema.properties).map(([key, property]) =>
       <div key={key}><strong>{key}</strong>: {property.enum?.join(" / ") || property.type}
         {property.minimum !== undefined && ` (${property.minimum}–${property.maximum ?? "∞"})`} — {property.description}</div>)}</details>}</label>;
-  if (schema.type === "integer" || schema.type === "number") return <label>{label}<input type="number" value={value ?? schema.default ?? ""}
+  if (schema.type === "integer" || schema.type === "number") return <label className="config-field">{label}<input type="number" value={value ?? schema.default ?? ""}
     min={schema.minimum} max={schema.maximum} step={schema.type === "integer" ? 1 : "any"} required={required}
     placeholder={schema.default === undefined ? "" : `Default: ${schema.default}`} onChange={(e) => onChange(e.target.value)} />{hint}</label>;
-  return <label>{label}<textarea rows="2" value={value ?? schema.default ?? ""} required={required} onChange={(e) => onChange(e.target.value)} />{hint}</label>;
+  return <label className="config-field">{label}<textarea rows="2" value={value ?? schema.default ?? ""} required={required} onChange={(e) => onChange(e.target.value)} />{hint}</label>;
 }
 
 export default function Training({ project }) {
@@ -111,10 +111,16 @@ export default function Training({ project }) {
           <p className="muted small">These infrastructure fields come from the published version and are locked for reproducibility.</p>
         </details>}
       </section>
-      <section><div className="eyebrow">MODEL CONFIGURATION</div><div className="training-grid training-params">
-        {Object.entries(selectedModel?.config_schema?.properties || {}).filter(([key]) => !managedFields.has(key)).map(([key, property]) =>
-          <ConfigField key={key} name={key} schema={resolveSchema(property, selectedModel.config_schema)} value={params[key]} required={selectedModel.config_schema.required?.includes(key)}
-            onChange={(value) => setParams((current) => ({ ...current, [key]: value }))} />)}</div>
+      <section><div className="eyebrow">MODEL CONFIGURATION</div>
+        <p className="muted config-intro">Defaults are prefilled. Leave a field blank to use its default.</p>
+        {[false, true].map((expanded) => {
+          const fields = Object.entries(selectedModel?.config_schema?.properties || {}).filter(([key]) => !managedFields.has(key))
+            .map(([key, property]) => [key, resolveSchema(property, selectedModel.config_schema)])
+            .filter(([, schema]) => ["object", "array", "string"].includes(schema.type) === expanded);
+          return fields.length > 0 && <div key={String(expanded)} className={`training-grid ${expanded ? "training-editors" : "training-params"}`}>
+            {fields.map(([key, schema]) => <ConfigField key={key} name={key} schema={schema} value={params[key]} required={selectedModel.config_schema.required?.includes(key)}
+              onChange={(value) => setParams((current) => ({ ...current, [key]: value }))} />)}</div>;
+        })}
         {!selectedModel?.config_schema && <p className="muted">This model does not expose a configurable Pydantic schema.</p>}
       </section>
       <section><div className="eyebrow">COMPUTE TARGET</div><div className="compute-choice">
