@@ -71,3 +71,73 @@ def test_invalid_workbench_remains_visible(tmp_path):
     found = discover_workbenches(tmp_path, refresh=True)
     assert found[0]["available"] is False
     assert found[0]["reason"]
+
+
+def test_workbench_logs_persist_and_job_paths_are_validated(tmp_path, monkeypatch):
+    from pathlib import Path
+    from ai_interfaces import BaseModelConfig, ModelArtifact, TrainingResult
+    class LoggingModel:
+        config_type = BaseModelConfig
+
+        def __init__(self, config):
+            self.config = config
+
+        def train(self, context):
+            logs = context.output_dir / "tensorboard"
+            logs.mkdir()
+            (logs / "events.test").write_bytes(b"event data")
+            artifact = context.output_dir / "model.bin"
+            artifact.write_bytes(b"trained model")
+            return TrainingResult({}, ModelArtifact(artifact))
+
+    monkeypatch.setattr(app, "RUNS_ROOT", tmp_path / "runs")
+    monkeypatch.setattr(app, "TENSORBOARD_URL", "http://localhost:6006")
+    monkeypatch.setattr(app, "find_workbench", lambda key: {"task": "image_classification"})
+    monkeypatch.setattr(app, "load_model", lambda workbench: LoggingModel)
+    client = TestClient(app.app)
+    assert client.get("/api/v1/capabilities").json()["tensorboard"] == {"available": True, "url": "http://localhost:6006"}
+    manifest = {"job_id": "run-123", "run_name": "261010-test-v1", "annotation_type": "image_classification", "base_model": "workspace:test",
+                "devices": ["cpu"], "config": {"dataset_path": "/dataset.zip", "output_path": "/output",
+                "project_id": "project", "dataset_version_id": "version", "class_names": ["coral"]}}
+    response = client.post("/api/v1/train", data={"manifest": json.dumps(manifest)},
+                           files={"dataset": ("dataset.zip", dataset_zip(), "application/zip")})
+    assert response.status_code == 200, response.text
+    assert (app.RUNS_ROOT / "261010-test-v1/tensorboard/events.test").read_bytes() == b"event data"
+    assert not (app.RUNS_ROOT / "261010-test-v1/model.bin").exists()
+    assert response.json()["config"]["output_path"] == str(app.RUNS_ROOT / "261010-test-v1")
+    assert response.json()["config"]["epochs"] == BaseModelConfig.model_fields["epochs"].default
+    assert not Path(manifest["config"]["dataset_path"]).exists()
+    assert client.post("/api/v1/train", data={"manifest": json.dumps(manifest)},
+                       files={"dataset": ("dataset.zip", dataset_zip(), "application/zip")}).status_code == 409
+    manifest["job_id"] = "../outside"
+    assert client.post("/api/v1/train", data={"manifest": json.dumps(manifest)},
+                       files={"dataset": ("dataset.zip", dataset_zip(), "application/zip")}).status_code == 422
+
+
+def test_trainer_failure_returns_details_and_agent_remains_usable(tmp_path, monkeypatch):
+    from ai_interfaces import BaseModelConfig
+
+    class FailingModel:
+        config_type = BaseModelConfig
+
+        def __init__(self, config):
+            pass
+
+        def train(self, context):
+            raise RuntimeError("Demo trainer failed: invalid batch")
+
+    monkeypatch.setattr(app, "RUNS_ROOT", tmp_path / "runs")
+    monkeypatch.setattr(app, "find_workbench", lambda key: {"task": "image_classification"})
+    monkeypatch.setattr(app, "load_model", lambda workbench: FailingModel)
+    client = TestClient(app.app)
+    manifest = {"job_id": "failed-run", "annotation_type": "image_classification", "base_model": "workspace:test",
+                "devices": ["cpu"], "config": {"dataset_path": "/dataset.zip", "output_path": "/output",
+                "project_id": "project", "dataset_version_id": "version", "class_names": ["coral"]}}
+    response = client.post("/api/v1/train", data={"manifest": json.dumps(manifest)},
+                           files={"dataset": ("dataset.zip", dataset_zip(), "application/zip")})
+    assert response.status_code == 500
+    assert response.json()["detail"] == "Training failed: RuntimeError: Demo trainer failed: invalid batch"
+    assert client.get("/health").status_code == 200
+    manifest["base_model"] = "histogram-centroid-v1"
+    assert client.post("/api/v1/train", data={"manifest": json.dumps(manifest)},
+                       files={"dataset": ("dataset.zip", dataset_zip(), "application/zip")}).status_code == 200

@@ -53,10 +53,31 @@ services:
     environment:
       TRAINING_GPU_AVAILABLE: ${TRAINING_GPU_AVAILABLE:-auto}
       TRAINING_WORKSPACES_ROOT: /workspaces
+      TRAINING_RUNS_ROOT: /training-runs
+      TENSORBOARD_PUBLIC_URL: ${TENSORBOARD_PUBLIC_URL:-http://localhost:${TENSORBOARD_PORT:-6006}}
     ports:
       - "${TRAINING_AGENT_PORT:-8090}:8090"
     volumes:
       - "${TRAINING_WORKSPACES_PATH:-./workspaces}:/workspaces:ro"
+      - training_runs:/training-runs
+    networks:
+      - ai-infra
+    logging: *default-logging
+
+  tensorboard:
+    image: ${TRAINING_AGENT_IMAGE:-ai-infra/training-agent:local}
+    restart: unless-stopped
+    command: ["tensorboard", "--logdir", "/training-runs", "--bind_all", "--port", "6006", "--reload_interval", "2", "--load_fast", "false"]
+    ports:
+      - "127.0.0.1:${TENSORBOARD_PORT:-6006}:6006"
+    volumes:
+      - training_runs:/training-runs:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6006/', timeout=2)"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
     networks:
       - ai-infra
     logging: *default-logging
@@ -161,6 +182,8 @@ networks:
     name: ${NETWORK_NAME:-ai-infra-network}
 
 volumes:
+  training_runs:
+    name: ${TRAINING_RUNS_VOLUME:-ai-infra_training_runs}
   labelling_data:
     name: ${LABELLING_VOLUME:-ai-infra_labelling_data}
   lakefs_data:

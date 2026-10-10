@@ -1,5 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Labelling Studio">
-  <rect width="64" height="64" rx="15" fill="#424854"/>
-  <path d="M20 15v31h25" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="46" cy="46" r="8" fill="#e76f51"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="AI Studio">
+  <rect width="64" height="64" rx="15" fill="#e76f51"/>
+  <g fill="none" stroke="#252931" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 46 24 18 36 46M17 35h14"/>
+    <path d="M47 19v26M42 19h10M42 45h10"/>
+  </g>
 </svg>

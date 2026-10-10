@@ -143,9 +143,9 @@ function App() {
             }
           }}
         >
-          <span className="brand-mark" aria-hidden="true">L</span>
+          <img className="brand-mark" src="/favicon.svg?v=ai-studio" alt="" aria-hidden="true" />
           <span className="brand-copy">
-            <strong>Labelling Studio</strong>
+            <strong>AI Studio</strong>
             <small>Dataset workspace</small>
           </span>
         </a>
@@ -396,7 +396,7 @@ function App() {
       {mergeError && <div className="modal-backdrop"><div className="panel ai-dialog" role="alertdialog"
         aria-modal="true" aria-labelledby="merge-error-title"><h2 id="merge-error-title">{mergeError}</h2>
         <button className="primary" autoFocus onClick={() => setMergeError("")}>OK</button></div></div>}
-      <footer className="app-footer">Labelling Studio · Image annotation workspace</footer>
+      <footer className="app-footer">AI Studio · Datasets, training and model lineage</footer>
     </div>
   );
 }

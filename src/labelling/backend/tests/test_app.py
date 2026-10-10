@@ -694,3 +694,36 @@ def test_project_comments_are_persistent_timestamped_and_use_forwarded_user(clie
     assert [item['body'] for item in comments] == ['Review started.', 'Initial upload complete.']
     assert client.delete(f'/api/projects/{pid}').status_code == 200
     assert client.get(f'/api/projects/{pid}/comments').status_code == 404
+
+
+def test_training_run_name_and_config_tracking(client, monkeypatch):
+    import re
+    from routes import training
+    caps = {'models': {'object_detection': [{'key': 'demo'}]}, 'gpu': {'available': False}}
+    monkeypatch.setattr(training, '_capabilities', lambda url: caps)
+    from types import SimpleNamespace
+    monkeypatch.setattr(training, 'threading', SimpleNamespace(Thread=lambda **kwargs: SimpleNamespace(start=lambda: None)))
+    project = client.post('/api/projects', json={'name': 'Test Project', 'classes': ['Object']}).json()
+    image = upload(client, project['id'])
+    assert save(client, project['id'], image).status_code == 200
+    version = client.post(f"/api/projects/{project['id']}/publish").json()
+    payload = {'version_id': version['id'], 'base_model': 'demo', 'hyperparameters': {'callbacks': ['tensorboard', 'gradcam']}}
+    path = f"/api/projects/{project['id']}/training/jobs"
+    first = client.post(path, json=payload).json()
+    second = client.post(path, json=payload).json()
+    assert re.fullmatch(r'\d{6}-test-project-v1', first['run_name'])
+    assert second['run_name'].endswith('-v2')
+    calls = []
+    def request(url, **kwargs):
+        calls.append((url, kwargs))
+        if 'get-by-name' in url: return httpx.Response(200, request=httpx.Request('GET', url), json={'experiment': {'experiment_id': '1'}})
+        if url.endswith('/create'): return httpx.Response(200, request=httpx.Request('GET', url), json={'run': {'info': {'run_id': 'run'}}})
+        return httpx.Response(200, request=httpx.Request('GET', url), json={})
+    import httpx
+    monkeypatch.setattr(training.httpx, 'get', request)
+    monkeypatch.setattr(training.httpx, 'post', request)
+    config = {'epochs': 3, 'augmentations': {'blur': 0.2}, 'callbacks': ['tensorboard', 'gradcam'], 'class_names': ['Object']}
+    assert training._mlflow(first, {'loss': 1.0}, config) == '1:run'
+    logged = next(kwargs['json'] for url, kwargs in calls if url.endswith('/log-batch'))
+    assert {item['key']: json.loads(item['value']) for item in logged['params'] if item['key'].startswith('config.')} == {f'config.{key}': value for key, value in config.items()}
+    assert next(kwargs['json']['run_name'] for url, kwargs in calls if url.endswith('/create')) == first['run_name']

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../api";
+import AnnotationBox from "./AnnotationBox";
 import { classColor } from "../visuals";
 
 function AnnotationPreview({ project, image }) {
@@ -15,9 +16,9 @@ function AnnotationPreview({ project, image }) {
       <img src={`/api/projects/${project.id}/images/${image.id}/file`} alt={image.source_path} />
       {data && project.annotation_type === "object_detection" && (
         <svg viewBox={`0 0 ${image.width} ${image.height}`} preserveAspectRatio="none">
-          {data.boxes.map((box, index) => <rect key={index} x={box.x} y={box.y}
-            width={box.width} height={box.height} fill={classColor(project, box.category_id)} fillOpacity=".12"
-            stroke={classColor(project, box.category_id)} strokeWidth="2" vectorEffect="non-scaling-stroke" />)}
+          {data.boxes.map((box, index) => <AnnotationBox key={index} box={box} color={classColor(project, box.category_id)}
+            label={project.classes.find((item) => item.id === box.category_id)?.name}
+            imageWidth={image.width} imageHeight={image.height} labelScale={2} />)}
         </svg>
       )}
       {data && project.annotation_type === "image_classification" && (
@@ -90,7 +91,7 @@ function Review({ project, images, filtered, onClear, onEdit, onReviewed }) {
       {!visible.length ? <div className="empty"><h2>No annotations to review</h2>
         <p>Complete an image or open a history entry containing images.</p></div> :
         <div className="review-grid">{visible.map((image) =>
-          <article className="panel review-card" key={image.id}>
+          <article className={`panel review-card ${selected.includes(image.id) ? "review-card-selected" : ""}`} key={image.id}>
             <label className="review-select"><input type="checkbox" checked={selected.includes(image.id)}
               disabled={!image.completed} onChange={(e) => setSelected(e.target.checked ? [...selected, image.id] : selected.filter((id) => id !== image.id))} /> Select</label>
             <AnnotationPreview project={project} image={image} />

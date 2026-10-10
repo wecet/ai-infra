@@ -2,6 +2,10 @@ FROM python:3.12-slim
 WORKDIR /app
 COPY src/training_agent/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
+# CPU wheels keep the default demo image small; GPU agents can override the index.
+ARG PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
+COPY src/training_agent/requirements-pytorch.txt ./requirements-pytorch.txt
+RUN pip install --no-cache-dir -r requirements-pytorch.txt --index-url ${PYTORCH_INDEX_URL}
 COPY libs/ai_interfaces /tmp/ai_interfaces
 RUN pip install --no-cache-dir /tmp/ai_interfaces && rm -rf /tmp/ai_interfaces
 COPY src/training_agent/app.py ./app.py

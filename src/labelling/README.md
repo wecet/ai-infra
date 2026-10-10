@@ -1,4 +1,4 @@
-# Labelling Studio
+# AI Studio
 
 The Training tab starts jobs only from immutable published versions. It supports the bundled local CPU/GPU compute agent or a remote agent addressed by IP, exposes model hyperparameters, downloads completed artifacts, and links tracked runs to MLflow. GPU selection remains disabled until the selected agent reports a usable runtime.
 
@@ -106,3 +106,17 @@ npm run build
 ```
 
 API tests cover persisted progress, immutable versions, version comparison, end-to-end lineage, class management and revision remapping, bulk review, search/filter metadata, project ordering and merging, review workflows, quality findings, AI instructions, project ZIP imports, dataset history, deletion restoration, comments, duplicate analysis, concurrency, Dashboard counts, and export/import round trips.
+
+### Training failure recovery
+
+If **Start training** cannot submit the configuration, AI Studio opens a closable error popup and keeps the form available. If a queued trainer fails later, polling opens a popup with the trainer's error message and records the failed run in **Training jobs**. Close with **Close** or **Escape**, correct the configuration or dataset, then start a new run. The same failed job is not repeatedly shown during polling; earlier failures stay in the jobs table when you reopen the page.
+
+Annotation selection uses theme-aware surfaces in the editor, review cards and version comparison. Bounding boxes retain their class colors with contrasting outlines, and class names appear on solid dark badges so they remain readable over bright or dark images.
+
+Training job actions include **↓ Download Model**, **↗ View on MLflow**, and **▥ View live metrics** on the run itself. Live metrics opens TensorBoard's Time Series dashboard with an exact run filter, selecting only that run; the button uses the run's enabled callbacks and compute agent dashboard. New training runs are named `YYMMDD-{project-name}-v{version-number}` with a normalized project name and incrementing training version (including retries). Internal job IDs remain unique. MLflow records the validated training configuration, including defaults, augmentations, callbacks, classes, dataset version and devices, as `config.*` parameters. Existing runs retain their historical names/configuration.
+
+### Theme and layout conventions
+
+Light and dark modes share control dimensions and visible keyboard focus outlines. Small accent text uses a separate contrast color from coral button backgrounds. Lineage cards align content to the left and show readable metadata. Within Commits & runs, lakeFS commits use a teal branch icon and edge, while training runs use a coral play icon and edge; UTC timestamps with or without explicit offsets use the same date formatter. Training job metrics expand under **View training metrics**, while model, MLflow, and live-metrics links remain compact on one row.
+
+When reviewing UI changes, check the project list, annotation and Review pages, Dashboard, History, Versions (including previews), Compare, Lineage, Training, and Manage in both themes. Use existing data without altering annotations or publishing extra versions for visual checks. Check populated and empty states where available, and inspect narrow-screen rules separately.

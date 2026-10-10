@@ -1,3 +1,4 @@
+import { formatDate } from "../dates";
 import React, { useEffect, useState } from "react";
 import { api } from "../api";
 
@@ -31,7 +32,7 @@ function History({ project, onView, onRestored }) {
     </tr></thead><tbody>{history.map((entry) => <tr key={entry.id}>
       <td>v{entry.version}</td><td>{entry.kind === "project_created" ? "Project Created" : entry.kind === "images_deleted" ? "Images Deleted" : entry.kind === "images_restored" ? "Images Restored" : entry.kind === "projects_merged" ? "Projects Merged" : "New Additions"}</td>
       <td className={entry.sample_delta < 0 ? "warning-text" : "accent"}>{entry.sample_delta > 0 ? "+" : ""}{entry.sample_delta}</td>
-      <td>{entry.total_samples}</td><td>{new Date(`${entry.created_at}${entry.created_at.endsWith("Z") ? "" : "Z"}`).toLocaleString()}</td>
+      <td>{entry.total_samples}</td><td>{formatDate(entry.created_at)}</td>
       <td>{entry.kind === "images_deleted" ? <details><summary>View deleted image</summary>
         <div className="history-details">{entry.details.map((item) => <article key={item.id}>
           {item.restorable && <img src={`/api/projects/${project.id}/history/${entry.id}/deleted/${item.id}/file`}

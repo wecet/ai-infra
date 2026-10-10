@@ -22,3 +22,40 @@
 [data-theme="dark"] .compute-card { background: #24272c; } [data-theme="dark"] .job-status { background: #3a3e46; color: #e7e8ea; }
 [data-theme="dark"] .job-status.succeeded { background: #243a2b; color: #9ed6ae; } [data-theme="dark"] .job-status.failed { background: #442b29; color: #ffaaa0; }
 @media (max-width: 700px) { .training-grid, .compute-choice { grid-template-columns: 1fr; }.training-params { grid-template-columns: repeat(2, 1fr); } }
+
+/* Keep field names, editable values and help text visually distinct. */
+.training-form label:not(.checkbox-label):not(.compute-card) { align-content: start; gap: 8px; min-width: 0; font-size: 12px; font-weight: 600; line-height: 1.5; }
+.training-form :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+  box-sizing: border-box; width: 100%; min-height: 42px; padding: 10px 12px;
+  border: 1px solid var(--line-strong); background: var(--canvas); color: inherit;
+  font-size: 14px; font-weight: 400; line-height: 1.4;
+}
+.training-form :is(input, select, textarea):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.training-form label small { color: var(--muted); font-size: 12px; font-weight: 400; line-height: 1.5; }
+.training-params { gap: 20px 18px; align-items: start; }
+.training-params input { font-variant-numeric: tabular-nums; }
+.training-editors { gap: 20px; padding-top: 20px; margin-top: 10px; border-top: 1px solid var(--line); align-items: start; }
+.config-intro { margin: 0 0 4px; font-size: 12px; }
+.config-structured textarea { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; resize: vertical; }
+.training-form select[multiple] { min-height: 120px; }
+.training-form select[multiple] option { padding: 6px 8px; }
+[data-theme="dark"] .training-form :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) { background: var(--canvas); border-color: var(--line-strong); }
+@media (max-width: 1000px) { .training-params { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .training-editors { grid-template-columns: 1fr; } }
+@media (max-width: 480px) { .training-params { grid-template-columns: 1fr; } }
+
+.config-field { display: grid; align-content: start; gap: 8px; min-width: 0; }
+.config-field-heading { display: flex; align-items: center; gap: 8px; min-height: 36px; }
+.training-form .config-field-heading label { display: block; margin: 0; }
+.training-form .config-field > :is(input, select, textarea) { display: block; margin: 0; }
+.training-editors .config-field > :is(textarea, select[multiple]) { height: 156px; min-height: 156px; }
+.training-form .config-info { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; min-height: 24px; padding: 0; border-radius: 50%; font-size: 13px; font-weight: 700; color: var(--muted); box-shadow: none; }
+.config-help { box-sizing: border-box; width: min(520px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); overflow: auto; padding: 24px; border: 1px solid var(--line-strong); border-radius: 14px; color: inherit; background: var(--panel); box-shadow: var(--shadow-md); }
+.config-help::backdrop { background: #10131899; }
+.config-help-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.config-help p { white-space: pre-wrap; line-height: 1.6; font-weight: 400; }
+.config-help-options { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
+.config-help-options h3 { font-size: 13px; margin: 0; }
+.config-help button:focus-visible, .config-info:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.training-error p { overflow-wrap: anywhere; }

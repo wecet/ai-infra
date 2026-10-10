@@ -1,3 +1,4 @@
+import { formatDate } from "../dates";
 import React, { useEffect, useState } from "react";
 import { api } from "../api";
 import { classColor } from "../visuals";
@@ -41,7 +42,7 @@ function Comments({ project }) {
     <div className="comment-thread">{comments?.map((comment) => <article className="comment" key={comment.id}>
       <div className="comment-avatar" aria-hidden="true">{comment.author.slice(0, 1).toUpperCase()}</div>
       <div><header><strong>{comment.author}</strong><time dateTime={comment.created_at}>
-        {new Date(`${comment.created_at}${comment.created_at.endsWith("Z") ? "" : "Z"}`).toLocaleString()}
+        {formatDate(comment.created_at)}
       </time></header><p>{comment.body}</p></div>
     </article>)}</div>
   </section>;

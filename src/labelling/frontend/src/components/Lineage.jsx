@@ -1,3 +1,4 @@
+import { formatDate } from "../dates";
 import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 
@@ -41,7 +42,11 @@ export default function Lineage({ project, onNavigate }) {
         <header><span>{stageIndex + 1}</span><strong>{stage.title}</strong></header>
         <div className="lineage-stage-nodes">{byStage[stage.key].length ? byStage[stage.key].map((node) =>
           <button key={node.id} className={`lineage-node lineage-${node.type} lineage-${node.subtype || ""} ${node.status || ""}`} onClick={() => open(node)} disabled={!node.target}>
-            <span className="lineage-kind">{nodeLabel(node)}</span><strong>{node.title}</strong><small>{node.subtitle}</small><time>{new Date(`${node.created_at}${node.created_at?.endsWith("Z") ? "" : "Z"}`).toLocaleString()}</time>
+            <span className="lineage-kind">
+              {node.type === "lakefs" && <svg className="lineage-type-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="7" cy="5" r="3"/><circle cx="7" cy="19" r="3"/><circle cx="18" cy="7" r="3"/><path d="M7 8v8m0-3c7 0 11-1 11-3"/></svg>}
+              {node.type === "training" && <svg className="lineage-type-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="m10 7 7 5-7 5Z"/></svg>}
+              {nodeLabel(node)}
+            </span><strong>{node.title}</strong><small>{node.subtitle}</small><time>{formatDate(node.created_at)}</time>
           </button>) : <div className="lineage-empty">No {stage.title.toLowerCase()} yet</div>}</div>
       </section>)}</div>
       <p className="muted small lineage-note">Select a node to open its dataset history, immutable version, lakeFS commit, training job, or MLflow run.</p>

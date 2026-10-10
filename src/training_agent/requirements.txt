@@ -2,4 +2,6 @@ fastapi==0.135.1
 uvicorn==0.41.0
 python-multipart==0.0.22
 Pillow==12.1.1
-
+tensorboard==2.20.0
+# TensorBoard 2.20 uses pkg_resources, removed in newer setuptools.
+setuptools>=69,<82

@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from "react";
+import AnnotationBox from "./AnnotationBox";
 import { api } from "../api";
 
 function DiffPreview({ project, version, imageId, boxes, labels, width, height, classes, title }) {
   const names = Object.fromEntries(classes.map((item) => [item.id, item.name]));
   return <article className="diff-preview"><header><strong>{title}</strong><span>{version.name}</span></header>
     <div className="diff-image">{imageId ? <div className="diff-canvas" style={{ aspectRatio: `${width} / ${height}` }}><img src={`/api/projects/${project.id}/versions/${version.id}/images/${imageId}/file`} alt={`Frozen sample in ${version.name}`} />
-      {!!boxes?.length && <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" aria-label={`${boxes.length} annotations`}>{boxes.map((box, index) => <g key={index}>
-        <rect x={box.x} y={box.y} width={box.width} height={box.height} style={{ stroke: classes.find((item) => item.id === box.category_id)?.color || "#e76f51" }} />
-        <text x={box.x + 4} y={Math.max(14, box.y + 14)}>{names[box.category_id]}</text></g>)}</svg>}
+      {!!boxes?.length && <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" aria-label={`${boxes.length} annotations`}>{boxes.map((box, index) => <AnnotationBox key={index} box={box}
+        color={classes.find((item) => item.id === box.category_id)?.color || "#e76f51"}
+        label={names[box.category_id]} imageWidth={width} imageHeight={height} />)}</svg>}
       {!!labels?.length && <div className="diff-labels">{labels.map((id) => <span key={id}>{names[id] || id}</span>)}</div>}</div> : <div className="diff-missing">Image is not present</div>}</div>
   </article>;
 }

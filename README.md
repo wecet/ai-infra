@@ -2,10 +2,11 @@
 
 A self-hosted Docker Compose stack containing:
 
-- **Labelling Studio** — image classification and object-detection annotation
+- **AI Studio** — dataset annotation, model training and lineage
 - **lakeFS** — versioned dataset storage used by published labelling snapshots
 - **MLflow** - experiment and artifact tracking
 - **Training agent** - CPU/GPU model execution, deployable locally or on a remote host
+- **TensorBoard** — live training losses and Grad-CAM images for the PyTorch demos
 
 The labeller supports project ZIP import/export, managed classes, AI-assisted box suggestions, review workflows, immutable versions, lakeFS publishing, dataset lineage, version comparison, dataset quality checks, deletion recovery, comments, train/test exports, and version-bound training jobs. See the [labelling guide](src/labelling/README.md) for the complete workflow.
 
@@ -26,10 +27,11 @@ Open the services at:
 
 | Service | Default URL |
 | --- | --- |
-| Labelling Studio | http://localhost:8081 |
+| AI Studio | http://localhost:8081 |
 | lakeFS | http://localhost:8002 |
 | MLflow | http://localhost:5001 |
 | Training agent | http://localhost:8090 |
+| TensorBoard | http://localhost:6006 |
 
 The labeller uses host port `8081` because `8080` was already occupied on the machine where this stack was configured. Change `LABELLING_PORT`, `LAKEFS_PORT`, or `MLFLOW_PORT` in `.env` if a port is unavailable, then recreate the services with `docker compose up -d`.
 
@@ -39,7 +41,9 @@ lakeFS is initialized automatically from the `LAKEFS_*` values in `.env`. Log in
 
 Publish an immutable dataset from the Dashboard, then open the project's **Training** tab. Choose the version, installed base model, hyperparameters, and compute target. For remote compute, run the training-agent image on another machine, expose port `8090`, enter its IP and port, and test the connection before starting the job.
 
-The bundled models are lightweight baseline trainers: a colour-centroid classifier and a class box-prior detector. They exercise the complete job, artifact, and MLflow path without downloading a heavyweight framework. Production PyTorch, TensorFlow, or ONNX packages plug into the public contracts in [`libs/ai_interfaces`](libs/ai_interfaces/README.md).
+The bundled models are lightweight baseline trainers: a colour-centroid classifier and a class box-prior detector. They exercise the complete job, artifact, and MLflow path without downloading a heavyweight framework. Two discoverable PyTorch demos live in [`tests`](tests/README.md): a multi-label CNN classifier and a Faster R-CNN detector with a tiny backbone. The training-agent image installs their PyTorch dependencies. **View live metrics** opens TensorBoard in a new tab; losses and Grad-CAM visualizations are logged during training and retained in the training-runs volume. Other PyTorch, TensorFlow, or ONNX packages plug into the public contracts in [`libs/ai_interfaces`](libs/ai_interfaces/README.md).
+
+Training configuration fields use their Pydantic defaults and expose `Field(description="...")` through the information button beside each label. Missing descriptions show **No description defined**. Start-request errors and newly failed background runs open a closable error popup; the training page and entered configuration remain available for correction and retry. Trainer exception details are retained in the failed job's result. Close the popup with **Close** or **Escape**; polling does not repeatedly reopen the same failure or replay historical failures when entering the page.
 
 The project **Lineage** tab traces imports, deletion/restoration events, published versions, lakeFS commits, training runs, registered models, and deployments. The **Compare** tab audits any two published versions, including membership, annotations, classes, deterministic train/test assignment, review status, quality metrics, duplicates, and split leakage.
 
