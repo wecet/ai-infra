@@ -4,7 +4,7 @@ The classic Compose stack uses these default named volumes:
 
 | Service | Volume | Container path |
 | --- | --- | --- |
-| Labelling Studio | `ai-infra_labelling_data` | `/data` |
+| AI Studio | `ai-infra_labelling_data` | `/data` |
 | lakeFS | `ai-infra_lakefs_data` | `/data` |
 | MLflow | `ai-infra_mlflow_data` | `/mlflow` |
 

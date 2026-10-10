@@ -1,4 +1,4 @@
-# Labelling Studio
+# AI Studio
 
 The Training tab starts jobs only from immutable published versions. It supports the bundled local CPU/GPU compute agent or a remote agent addressed by IP, exposes model hyperparameters, downloads completed artifacts, and links tracked runs to MLflow. GPU selection remains disabled until the selected agent reports a usable runtime.
 

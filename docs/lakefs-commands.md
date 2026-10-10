@@ -16,4 +16,4 @@ lakectl fs upload lakefs://datasets/main/samples --source samples --recursive
 lakectl commit lakefs://datasets/main -m "Upload samples"
 ```
 
-The Labelling Studio creates the configured repository automatically when its first immutable version is pushed to lakeFS.
+The AI Studio creates the configured repository automatically when its first immutable version is pushed to lakeFS.
