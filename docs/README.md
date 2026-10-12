@@ -10,6 +10,7 @@ The guides below describe the current checkout. Published container and interfac
 | [Studio workflow](../src/labelling/README.md) | Projects, imports, labelling, anomaly datasets, versions, and training |
 | [Training jobs and evaluation](training-jobs-and-evaluation.md) | Background job ownership, progress, recovery and held-out model evaluation |
 | [Model interfaces](../libs/ai_interfaces/README.md) | Workbench discovery, Pydantic configuration, training, and inference contracts |
+| [Workspace authoring](workspace-authoring.md) | Directory layout and config, model, training and inference examples |
 | [PyTorch demos](../tests/README.md) | Classification and detection demos, augmentations, callbacks, and smoke checks |
 | [Deployment](deployment.md) | Local stack and remote compute |
 | [Environment variables](configurable-variables.md) | Supported configuration groups |

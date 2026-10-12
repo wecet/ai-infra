@@ -57,6 +57,8 @@ New jobs record a fixed held-out partition and exclude those images from fitting
 
 The project **Lineage** tab traces imports, deletion/restoration events, published versions, lakeFS commits, training runs, registered models, and deployments. The **Compare** tab audits any two published versions, including membership, annotations, classes, deterministic train/test assignment, review status, quality metrics, duplicates, and split leakage.
 
+See [Workspace authoring](docs/workspace-authoring.md) for the directory layout and configuration, model, training and inference skeletons.
+
 Install the current `ai_interfaces` contracts in another workspace from their package release tag:
 
 ```bash

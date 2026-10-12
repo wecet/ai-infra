@@ -22,6 +22,9 @@ installing from a moving branch in production.
 
 ## Create a discoverable workbench
 
+For a full directory layout and separate `config.py`, `model.py`, `train.py` and
+`infer.py` skeletons, see [Workspace authoring](../../docs/workspace-authoring.md).
+
 Each repository needs exactly two integration files at its root:
 
 ```text
