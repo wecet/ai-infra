@@ -13,6 +13,8 @@ router = APIRouter()
 
 
 def _split(snapshot):
+    if snapshot["project"]["annotation_type"] == "anomaly_detection":
+        return {item["source_path"]: item["split"] for item in snapshot["images"]}
     images = sorted(snapshot["images"], key=lambda item: item["id"])
     random.Random(42).shuffle(images)
     cut = math.floor(len(images) * snapshot["project"].get("export_train_percent", 80) / 100 + .5)
@@ -66,7 +68,7 @@ def _quality(snapshot, duplicate):
     for image in snapshot["images"]:
         review[image.get("review_status", "draft")] += 1
         boxes, labels = image.get("boxes", []), image.get("labels", [])
-        if image.get("completed") and not boxes and not labels: missing += 1
+        if image.get("completed") and not boxes and not labels and snapshot["project"]["annotation_type"] != "anomaly_detection": missing += 1
         for category in labels: counts[category] = counts.get(category, 0) + 1
         for box in boxes:
             counts[box["category_id"]] = counts.get(box["category_id"], 0) + 1

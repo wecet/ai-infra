@@ -11,7 +11,10 @@ def _validate_import_document(document, filename):
         raise HTTPException(422, f'{filename}: annotation JSON must be an object')
     images, categories, annotations = (document.get('images'), document.get('categories'),
                                        document.get('annotations', []))
-    if not isinstance(images, list) or not isinstance(categories, list) or not categories:
+    anomaly = document.get('info', {}).get('annotation_type') == 'anomaly_detection'
+    if anomaly and (categories or annotations or any(item.get('category_ids') for item in images or [] if isinstance(item, dict))):
+        raise HTTPException(422, f'{filename}: anomaly datasets must be unlabelled')
+    if not isinstance(images, list) or not isinstance(categories, list) or (not categories and not anomaly):
         raise HTTPException(422, f'{filename}: images and a non-empty categories list are required')
     if not isinstance(annotations, list):
         raise HTTPException(422, f'{filename}: annotations must be a list')
@@ -43,7 +46,7 @@ def _validate_import_document(document, filename):
             labels = item.get('category_ids', [])
             if not isinstance(labels, list) or any(label not in category_ids for label in labels):
                 raise HTTPException(422, f'{filename}: category_ids must be a list of known category ids')
-    return 'object_detection' if has_boxes else 'image_classification'
+    return 'anomaly_detection' if anomaly else ('object_detection' if has_boxes else 'image_classification')
 
 @router.get('/api/projects')
 def projects():
@@ -71,7 +74,9 @@ def reorder_projects(payload: ProjectOrder):
 def create_project(payload: ProjectCreate):
     name = payload.name.strip()
     classes = [c.strip() for c in payload.classes]
-    if not name or any(not c or len(c) > 100 for c in classes):
+    if payload.annotation_type == 'anomaly_detection' and classes:
+        raise HTTPException(422, 'Unsupervised anomaly datasets do not use classes')
+    if not name or (payload.annotation_type != 'anomaly_detection' and not classes) or any(not c or len(c) > 100 for c in classes):
         raise HTTPException(422, 'Enter a project name and class names of 1–100 characters')
     if len({c.casefold() for c in classes}) != len(classes):
         raise HTTPException(422, 'Class names must be unique')
@@ -167,6 +172,8 @@ def validate_class_name(classes, name, exclude_id=None):
 def add_class(project_id: str, payload: ClassCreate):
     with database() as db:
         project = get_project(db, project_id)
+        if project['annotation_type'] == 'anomaly_detection':
+            raise HTTPException(422, 'Unsupervised anomaly datasets do not use classes')
         name = validate_class_name(project['classes'], payload.name)
         category_id = max((item['id'] for item in project['classes']), default=0) + 1
         classes = project['classes'] + [{'id': category_id, 'name': name,

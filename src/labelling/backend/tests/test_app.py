@@ -730,3 +730,102 @@ def test_training_run_name_and_config_tracking(client, monkeypatch):
     logged = next(kwargs['json'] for url, kwargs in calls if url.endswith('/log-batch'))
     assert {item['key']: json.loads(item['value']) for item in logged['params'] if item['key'].startswith('config.')} == {f'config.{key}': value for key, value in config.items()}
     assert next(kwargs['json']['run_name'] for url, kwargs in calls if url.endswith('/create')) == first['run_name']
+
+
+def test_anomaly_dataset_publish_split_lakefs_and_archive_roundtrip(client, monkeypatch):
+    assert client.post('/api/projects', json={'name': 'Invalid', 'classes': ['Normal'],
+        'annotation_type': 'anomaly_detection'}).status_code == 422
+    assert client.post('/api/projects', json={'name': 'Invalid supervised'}).status_code == 422
+    created = client.post('/api/projects', json={'name': 'Anomalies', 'annotation_type': 'anomaly_detection'})
+    assert created.status_code == 201, created.text
+    pid = created.json()['id']
+    assert created.json()['classes'] == []
+    assert client.post(f'/api/projects/{pid}/publish').status_code == 422
+    for index in range(5):
+        image = upload(client, pid, f'normal/{index}.png', (20 + index, 20))
+        assert image['completed'] and not image['boxes'] and not image['labels']
+    assert client.post(f'/api/projects/{pid}/classes', json={'name': 'Wrong', 'color': '#123456'}).status_code == 422
+    assert save(client, pid, image, boxes=[]).status_code == 422
+    assert client.put(f"/api/projects/{pid}/images/{image['id']}/review", json={'status': 'approved'}).status_code == 422
+    stats = client.get(f'/api/projects/{pid}/stats').json()
+    assert stats['total'] == stats['completed'] == 5 and stats['remaining'] == 0
+    assert not any(stats['review'][status] for status in ['ready_for_review', 'approved', 'rejected'])
+    quality = client.get(f'/api/projects/{pid}/quality').json()
+    assert quality['checks_run'] == 2
+    assert 'missing_labels' not in {item['code'] for item in quality['issues']}
+    assert client.put(f'/api/projects/{pid}', json={'name': 'Anomalies', 'export_train_percent': 60}).status_code == 200
+    version = client.post(f'/api/projects/{pid}/publish').json()
+    detail = client.get(f"/api/projects/{pid}/versions/{version['id']}").json()
+    splits = {item['source_path']: item['split'] for item in detail['snapshot']['images']}
+    assert list(splits.values()).count('train') == 3
+    assert list(splits.values()).count('test') == 2
+    exports = {}
+    for split, count in [('train', 3), ('test', 2)]:
+        response = client.post(f'/api/projects/{pid}/export', json={'train_percent': 60, 'split': split})
+        assert response.status_code == 200
+        with zipfile.ZipFile(io.BytesIO(response.content)) as bundle:
+            document = json.loads(bundle.read(f'annotations/Anomalies_{split}.json'))
+        assert len(document['images']) == count and document['categories'] == document['annotations'] == []
+        assert all(splits[item['source_path']] == split for item in document['images'])
+    assert client.put(f'/api/projects/{pid}', json={'name': 'Anomalies', 'export_train_percent': 20}).status_code == 200
+    next_version = client.post(f'/api/projects/{pid}/publish').json()
+    compared = client.get(f'/api/projects/{pid}/versions/compare', params={'left_id': version['id'], 'right_id': next_version['id']}).json()
+    assert compared['quality']['left']['missing_annotations'] == 0
+    assert compared['quality']['right']['missing_annotations'] == 0
+    assert compared['summary']['split_changes'] > 0
+    frozen = client.get(f"/api/projects/{pid}/versions/{version['id']}/export")
+    assert frozen.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(frozen.content)) as bundle:
+        document = json.loads(bundle.read(next(name for name in bundle.namelist() if name.endswith('.json'))))
+    assert document['info']['train_samples'] == 3 and document['info']['test_samples'] == 2
+    assert {item['source_path']: item['split'] for item in document['images']} == splits
+    captured = []
+    def push(objects, message, metadata):
+        captured.extend(objects)
+        return {'commit_id': 'anomaly-commit', 'repository': 'datasets', 'branch': 'main'}
+    monkeypatch.setattr(service.versions.lakefs_client, 'push_snapshot', push)
+    assert client.post(f"/api/projects/{pid}/versions/{version['id']}/lakefs").status_code == 200
+    lakefs_manifest = json.loads(next(content for path, content, _ in captured if path.endswith('.json')))
+    assert lakefs_manifest == document
+    imported = client.post('/api/projects/import', data={'name': 'Restored anomaly dataset'},
+        files={'file': ('anomalies.zip', frozen.content, 'application/zip')})
+    assert imported.status_code == 201, imported.text
+    assert imported.json()['project']['annotation_type'] == 'anomaly_detection'
+    restored = client.get(f"/api/projects/{imported.json()['project']['id']}/stats").json()
+    assert restored['completed'] == restored['total'] == 5
+    graph = client.get(f'/api/projects/{pid}/lineage').json()
+    assert graph['counts']['versions'] == 2 and graph['counts']['lakefs_commits'] == 1
+
+
+def test_anomaly_training_job_preserves_frozen_split_and_registers_model(client, monkeypatch):
+    import base64
+    import types
+    training = service.training
+    pid = client.post('/api/projects', json={'name': 'Anomaly training', 'annotation_type': 'anomaly_detection'}).json()['id']
+    for index in range(5): upload(client, pid, f'{index}.png', (10 + index, 10))
+    version = client.post(f'/api/projects/{pid}/publish').json()
+    monkeypatch.setattr(training, '_capabilities', lambda agent: {'models': {'anomaly_detection': [
+        {'key': 'colour-distance-anomaly-v1'}]}, 'gpu': {'available': False}})
+    monkeypatch.setattr(training, '_mlflow', lambda *args: '7:anomaly-run')
+    captured = {}
+    def compute(url, data, files, timeout):
+        manifest = json.loads(data['manifest']); captured.update(manifest)
+        with zipfile.ZipFile(io.BytesIO(files['dataset'][1])) as bundle:
+            document = json.loads(bundle.read(next(name for name in bundle.namelist() if name.endswith('.json'))))
+        assert sum(image['split'] == 'train' for image in document['images']) == 4
+        assert sum(image['split'] == 'test' for image in document['images']) == 1
+        return types.SimpleNamespace(raise_for_status=lambda: None, json=lambda: {
+            'metrics': {'train_samples': 4, 'test_samples': 1},
+            'artifact': {'filename': 'model.json', 'content_base64': base64.b64encode(b'{}').decode()}})
+    monkeypatch.setattr(training.httpx, 'post', compute)
+    monkeypatch.setattr(training.threading, 'Thread', lambda target, args, daemon:
+        types.SimpleNamespace(start=lambda: target(*args)))
+    response = client.post(f'/api/projects/{pid}/training/jobs', json={
+        'version_id': version['id'], 'base_model': 'colour-distance-anomaly-v1',
+        'compute': {'kind': 'local', 'cpu': True, 'gpu': False}, 'hyperparameters': {}})
+    assert response.status_code == 202, response.text
+    assert captured['annotation_type'] == 'anomaly_detection' and captured['config']['class_names'] == []
+    job = client.get(f'/api/projects/{pid}/training/jobs').json()[0]
+    assert job['status'] == 'succeeded' and job['artifact_available'], job
+    graph = client.get(f'/api/projects/{pid}/lineage').json()
+    assert graph['counts']['training_runs'] == graph['counts']['registered_models'] == 1

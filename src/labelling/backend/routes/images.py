@@ -73,7 +73,7 @@ def batch_images(project_id: str, batch_id: str):
 @router.post('/api/projects/{project_id}/images', status_code=201)
 def upload_image(project_id: str, file: UploadFile = File(...), batch_id: str | None = None):
     with database() as db:
-        get_project(db, project_id)
+        project = get_project(db, project_id)
         if batch_id is None:
             batch = db.execute('SELECT id FROM import_batches WHERE project_id=? ORDER BY rowid LIMIT 1',
                                (project_id,)).fetchone()
@@ -114,11 +114,12 @@ def upload_image(project_id: str, file: UploadFile = File(...), batch_id: str | 
                 normalized.save(target, 'PNG')
         with database() as db:
             db.execute('''INSERT INTO images
-                (id,project_id,source_path,stored_name,digest,width,height,batch_id,perceptual_hash)
-                VALUES (?,?,?,?,?,?,?,?,?)''',
-                (image_id, project_id, source_path, stored_name, digest, width, height, batch_id, image_hash))
+                (id,project_id,source_path,stored_name,digest,width,height,batch_id,perceptual_hash,completed)
+                VALUES (?,?,?,?,?,?,?,?,?,?)''',
+                (image_id, project_id, source_path, stored_name, digest, width, height, batch_id, image_hash, int(project["annotation_type"] == "anomaly_detection")))
             db.execute('''INSERT INTO annotation_revisions
-                (image_id,revision,boxes,labels,completed) VALUES (?,0,'[]','[]',0)''', (image_id,))
+                (image_id,revision,boxes,labels,completed) VALUES (?,0,'[]','[]',?)''',
+                       (image_id, int(project['annotation_type'] == 'anomaly_detection')))
             return image_json(get_image(db, project_id, image_id))
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError, Image.DecompressionBombWarning):
         target.unlink(missing_ok=True)
@@ -228,6 +229,8 @@ def save_annotations(project_id: str, image_id: str, payload: AnnotationSave):
     with database() as db:
         project = get_project(db, project_id)
         row = get_image(db, project_id, image_id)
+        if project['annotation_type'] == 'anomaly_detection':
+            raise HTTPException(422, 'Anomaly datasets are unlabelled; annotation editing is unavailable')
         categories = {c['id'] for c in project['classes']}
         classification = project['annotation_type'] == 'image_classification'
         if classification and payload.boxes:
@@ -265,6 +268,8 @@ def review_annotation(project_id: str, image_id: str, payload: ReviewDecision, r
     reviewer = (request.headers.get('x-forwarded-preferred-username') or
                 request.headers.get('x-forwarded-user') or 'admin').strip()[:150] or 'admin'
     with database() as db:
+        if get_project(db, project_id)['annotation_type'] == 'anomaly_detection':
+            raise HTTPException(422, 'Unsupervised anomaly images do not require annotation review')
         row = get_image(db, project_id, image_id)
         if not row['completed']:
             raise HTTPException(422, 'Complete the annotation before reviewing it')
@@ -281,7 +286,8 @@ def bulk_review(project_id: str, payload: BulkReview, request: Request):
     reviewer = (request.headers.get('x-forwarded-preferred-username') or
                 request.headers.get('x-forwarded-user') or 'admin').strip()[:150] or 'admin'
     with database() as db:
-        get_project(db, project_id)
+        if get_project(db, project_id)['annotation_type'] == 'anomaly_detection':
+            raise HTTPException(422, 'Unsupervised anomaly images do not require annotation review')
         placeholders = ','.join('?' for _ in image_ids)
         rows = db.execute(f'SELECT id,completed FROM images WHERE project_id=? AND id IN ({placeholders})',
                           (project_id, *image_ids)).fetchall()
