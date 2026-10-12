@@ -159,9 +159,9 @@ function Dashboard({ project, onPublished }) {
             ].map(([label, value, note, clickable]) => {
               const Component = clickable ? "button" : "div";
               const tone = {
-                "TOTAL IMAGES": "total", "LABELLED": "labelled", "REMAINING": "remaining",
-                "READY FOR REVIEW": "review", "APPROVED": "approved",
-                "IMAGE LABELS": "annotations", "BOUNDING BOXES": "annotations", "SIMILAR IMAGES": "similar",
+                "TOTAL IMAGES": "data", "LABELLED": "complete", "REMAINING": "attention",
+                "READY FOR REVIEW": "attention", "APPROVED": "complete",
+                "IMAGE LABELS": "data", "BOUNDING BOXES": "data", "SIMILAR IMAGES": "attention",
               }[label];
               return <Component className={`panel kpi kpi-${tone} ${clickable ? "kpi-button" : ""}`} key={label}
                 disabled={clickable && !value} onClick={clickable ? openDuplicates : undefined}>

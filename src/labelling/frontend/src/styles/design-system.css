@@ -474,25 +474,19 @@ td { vertical-align: top; }
 .card-bottom span:last-child { color: var(--accent-ink); }
 input:not([type="checkbox"]):not([type="radio"]), textarea { font-weight: 400; }
 
-/* Metric identities stay consistent across themes; labels retain neutral contrast. */
-.kpi-total { --metric-ink: #286397; --metric-surface: #f1f7fc; --metric-border: #bdd4e7; }
-.kpi-labelled { --metric-ink: #13746e; --metric-surface: #eef9f7; --metric-border: #a9d7d0; }
-.kpi-remaining { --metric-ink: #8b5b13; --metric-surface: #fff8ec; --metric-border: #e1c68f; }
-.kpi-review { --metric-ink: #7448a5; --metric-surface: #f8f3fd; --metric-border: #d3bce9; }
-.kpi-approved { --metric-ink: #32733c; --metric-surface: #f1f9f0; --metric-border: #b4d6b7; }
-.kpi-annotations { --metric-ink: #a6402a; --metric-surface: #fff3ed; --metric-border: #e6bdad; }
-.kpi-similar { --metric-ink: #935178; --metric-surface: #fcf2f8; --metric-border: #dfbad0; }
+/* Shared semantic groups complement the studio's slate and coral palette. */
+.kpi-data, .metric-data { --metric-ink: #48576a; --metric-surface: #f3f5f7; --metric-border: #c9d1d9; }
+.kpi-complete { --metric-ink: #3f704d; --metric-surface: #f2f7f3; --metric-border: #bfd2c4; }
+.kpi-attention { --metric-ink: #8a612a; --metric-surface: #fbf6ee; --metric-border: #ddccae; }
+.metric-model { --metric-ink: var(--accent-ink); --metric-surface: var(--accent-soft); --metric-border: #e2b6a9; }
 .kpi { background: var(--metric-surface); border-color: var(--metric-border); }
 .kpi::before { background: var(--metric-ink); }
 .kpi strong { color: var(--metric-ink); }
 .kpi-button:disabled { opacity: 1; cursor: default; }
-[data-theme="dark"] .kpi-total { --metric-ink: #8cc6f4; --metric-surface: #243342; --metric-border: #405e78; }
-[data-theme="dark"] .kpi-labelled { --metric-ink: #7dd6cb; --metric-surface: #223936; --metric-border: #3e6963; }
-[data-theme="dark"] .kpi-remaining { --metric-ink: #e9bd6b; --metric-surface: #3b3325; --metric-border: #725d39; }
-[data-theme="dark"] .kpi-review { --metric-ink: #c6a4ef; --metric-surface: #342b42; --metric-border: #635079; }
-[data-theme="dark"] .kpi-approved { --metric-ink: #9bd59d; --metric-surface: #29392b; --metric-border: #4c6c4f; }
-[data-theme="dark"] .kpi-annotations { --metric-ink: #f4a08a; --metric-surface: #402e29; --metric-border: #795447; }
-[data-theme="dark"] .kpi-similar { --metric-ink: #e7a7cb; --metric-surface: #3c2c36; --metric-border: #735268; }
+[data-theme="dark"] :is(.kpi-data, .metric-data) { --metric-ink: #b5c3d3; --metric-surface: #2b3038; --metric-border: #48515e; }
+[data-theme="dark"] .kpi-complete { --metric-ink: #a6c9ae; --metric-surface: #2b352e; --metric-border: #4b6352; }
+[data-theme="dark"] .kpi-attention { --metric-ink: #dfbd86; --metric-surface: #373129; --metric-border: #6b5940; }
+[data-theme="dark"] .metric-model { --metric-border: #765247; }
 .kpi-button:not(:disabled):hover { background: var(--metric-surface); border-color: var(--metric-ink); }
-
 [data-theme="dark"] .kpi { background: var(--metric-surface); border-color: var(--metric-border); }
+[data-theme="dark"] .kpi strong { color: var(--metric-ink); }

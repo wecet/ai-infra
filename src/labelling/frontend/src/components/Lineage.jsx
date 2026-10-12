@@ -69,7 +69,7 @@ export default function Lineage({ project, onNavigate }) {
     <div className="page-heading"><div><h2>Dataset lineage</h2><p className="muted">Trace data from ingestion and review through versions, experiments, models, and deployments.</p></div><button onClick={load}>Refresh</button></div>
     {error && <div className="alert">{error}<button onClick={load}>Retry</button></div>}
     {!lineage ? <div className="empty">Loading lineage…</div> : <>
-      <div className="lineage-counts">{Object.entries(lineage.counts).map(([key, value]) => <div key={key}><strong>{value}</strong><span>{key.replaceAll("_", " ")}</span></div>)}</div>
+      <div className="lineage-counts">{Object.entries(lineage.counts).map(([key, value]) => <div key={key} className={`metric-${["batches", "versions", "lakefs_commits"].includes(key) ? "data" : "model"}`}><strong>{value}</strong><span>{key.replaceAll("_", " ")}</span></div>)}</div>
       <div className="lineage-graph" onScroll={() => setTooltip(null)}><div className="lineage-canvas" ref={canvas}>
       <svg className="lineage-connectors" aria-label="Lineage connections">
         {connectors.map((edge) => <g key={edge.id} className={`lineage-connection ${edge.kind === "snapshot" ? "snapshot" : ""} ${tooltip?.id === edge.id || activeNode === edge.from || activeNode === edge.to ? "active" : ""}`}>
