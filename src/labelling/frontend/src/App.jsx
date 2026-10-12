@@ -10,6 +10,7 @@ function App() {
     return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   });
   const [projects, setProjects] = useState([]);
+  const returningProject = useRef(window.sessionStorage.getItem("studio-open-project"));
   const [project, setProject] = useState(null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
@@ -34,7 +35,12 @@ function App() {
   }
   useEffect(() => {
     refresh();
+    if (returningProject.current) open(returningProject.current);
   }, []);
+  useEffect(() => {
+    if (project) window.sessionStorage.setItem("studio-open-project", project.id);
+    else window.sessionStorage.removeItem("studio-open-project");
+  }, [project]);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     document.documentElement.style.colorScheme = theme;

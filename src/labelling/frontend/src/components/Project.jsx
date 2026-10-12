@@ -21,7 +21,11 @@ const sections = [
 function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
   const anomaly = project.annotation_type === "anomaly_detection";
   const projectSections = anomaly ? sections.filter((section) => section.label !== "Label").map((section) => section.label === "Dataset" ? { ...section, tabs: [["stats", "Dashboard"], ["images", "Images"], ...section.tabs.slice(1)] } : section) : sections;
-  const [tab, setTab] = useState(anomaly ? "stats" : "annotate");
+  const [tab, setTab] = useState(() => {
+    const remembered = window.sessionStorage.getItem(`studio-project-tab:${project.id}`);
+    return projectSections.some((section) => section.tabs.some(([id]) => id === remembered)) ? remembered : anomaly ? "stats" : "annotate";
+  });
+  useEffect(() => { window.sessionStorage.setItem(`studio-project-tab:${project.id}`, tab); }, [project.id, tab]);
   const [images, setImages] = useState([]);
   const [index, setIndex] = useState(0);
   const [locked, setLocked] = useState(false);
@@ -33,6 +37,7 @@ function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
   const [aiValidating, setAiValidating] = useState(false);
   const [aiError, setAiError] = useState("");
   const [reviewImages, setReviewImages] = useState(null);
+  const [selectedModelId, setSelectedModelId] = useState("");
   const [selectedVersion, setSelectedVersion] = useState("");
   const classification = project.annotation_type === "image_classification";
   const aiAttempts = useRef(new Set());
@@ -144,6 +149,7 @@ function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
   const current = images[index];
   const activeSection = projectSections.find((section) => section.tabs.some(([id]) => id === tab)) || projectSections[0];
   function navigate(nextTab) {
+    setSelectedModelId("");
     if (nextTab === "review") setReviewImages(null);
     setTab(nextTab);
   }
@@ -245,9 +251,9 @@ function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
       ) : tab === "versions" ? (
         <Versions project={project} initialVersion={selectedVersion} />
       ) : tab === "training" ? (
-        <Training project={project} />
+        <Training project={project} initialModelId={selectedModelId} />
       ) : tab === "lineage" ? (
-        <Lineage project={project} onNavigate={(nextTab, id) => { if (nextTab === "versions") setSelectedVersion(id || ""); setTab(nextTab); }} />
+        <Lineage project={project} onNavigate={(nextTab, id) => { if (nextTab === "versions") setSelectedVersion(id || ""); if (nextTab === "training") setSelectedModelId(id || ""); setTab(nextTab); }} />
       ) : tab === "compare" ? (
         <VersionComparison project={project} />
       ) : tab === "history" ? (

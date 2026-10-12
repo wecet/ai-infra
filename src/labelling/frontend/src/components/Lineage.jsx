@@ -63,6 +63,7 @@ export default function Lineage({ project, onNavigate }) {
     if (target.kind === "external" && target.url) window.open(target.url, "_blank", "noopener,noreferrer");
     else if (target.kind === "version") onNavigate("versions", target.id);
     else if (target.kind === "history") onNavigate("history", target.id);
+    else if (target.kind === "model") onNavigate("training", target.id);
     else if (target.kind === "training") onNavigate("training", target.id);
   }
   return <div className="lineage-page">

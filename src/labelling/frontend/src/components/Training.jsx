@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useState, useId, useRef } from "react";
+import ModelEvaluation from "./ModelEvaluation";
+import { elapsedTime, heartbeatText } from "../training-status";
 import TrainingErrorDialog from "./TrainingErrorDialog";
 import { newTrainingFailures } from "../training-errors";
 import { api } from "../api";
@@ -42,7 +44,13 @@ function ConfigField({ name, schema, value, required, onChange }) {
   </div>;
 }
 
-export default function Training({ project }) {
+export default function Training({ project, initialModelId = "" }) {
+  const openedModel = useRef("");
+  const configuredModel = useRef("");
+  const [savedModels, setSavedModels] = useState([]);
+  const [viewModel, setViewModel] = useState(null);
+  const [clock, setClock] = useState(Date.now());
+  const [retryConfig, setRetryConfig] = useState(null);
   const [versions, setVersions] = useState([]); const [jobs, setJobs] = useState([]);
   const [caps, setCaps] = useState(null); const [version, setVersion] = useState("");
   const [model, setModel] = useState(""); const [params, setParams] = useState(defaults);
@@ -65,30 +73,54 @@ export default function Training({ project }) {
   const compatibleModels = models.filter((item) => item.available !== false && item.task === project.annotation_type);
   const selectedModel = useMemo(() => models.find((item) => item.key === model), [models, model]);
   async function load() {
-    try {
-      const [nextVersions, nextJobs, nextCaps] = await Promise.all([
-        api(`/projects/${project.id}/versions`), api(`/projects/${project.id}/training/jobs`), api("/training/capabilities"),
-      ]);
-      setVersions(nextVersions); updateJobs(nextJobs); setCaps(nextCaps);
-      setVersion((value) => value || nextVersions[0]?.id || "");
-      setModel((current) => {
-        const candidates = [...Object.values(nextCaps.models || {}).flat(), ...(nextCaps.workbenches || [])];
-        if (candidates.some((item) => item.key === current && item.available !== false && item.task === project.annotation_type)) return current;
-        return candidates.find((item) => item.available !== false && item.task === project.annotation_type)?.key || "";
-      });
-    } catch (e) { setError(e.message); }
+    const results = await Promise.allSettled([
+      api(`/projects/${project.id}/versions`).then((value) => { setVersions(value); setVersion((current) => current || value[0]?.id || ""); }),
+      refreshJobs(),
+      api("/training/capabilities").then((nextCaps) => {
+        setCaps(nextCaps);
+        setModel((current) => {
+          const candidates = [...Object.values(nextCaps.models || {}).flat(), ...(nextCaps.workbenches || [])];
+          if (candidates.some((item) => item.key === current && item.available !== false && item.task === project.annotation_type)) return current;
+          return candidates.find((item) => item.available !== false && item.task === project.annotation_type)?.key || "";
+        });
+      }),
+    ]);
+    for (const result of results) if (result.status === "rejected") setError(result.reason.message);
   }
   async function refreshJobs() {
-    try { updateJobs(await api(`/projects/${project.id}/training/jobs`)); }
-    catch (e) { setError(e.message); }
+    try {
+      const [nextJobs, nextModels] = await Promise.all([api(`/projects/${project.id}/training/jobs`), api(`/projects/${project.id}/models`)]);
+      updateJobs(nextJobs); setSavedModels(nextModels);
+    } catch (error) { setError(error.message); }
   }
-  useEffect(() => { seenJobs.current = null; setTrainingErrors([]); load(); const timer = setInterval(refreshJobs, 4000); return () => clearInterval(timer); }, [project.id]);
+  useEffect(() => {
+    seenJobs.current = null; setTrainingErrors([]); load();
+    const timer = setInterval(refreshJobs, 4000);
+    const clockTimer = setInterval(() => setClock(Date.now()), 1000);
+    const visible = () => { if (!document.hidden) refreshJobs(); };
+    document.addEventListener("visibilitychange", visible); window.addEventListener("focus", visible);
+    return () => { clearInterval(timer); clearInterval(clockTimer); document.removeEventListener("visibilitychange", visible); window.removeEventListener("focus", visible); };
+  }, [project.id]);
+  useEffect(() => {
+    const item = savedModels.find((item) => item.id === initialModelId);
+    if (item && openedModel.current !== initialModelId) { openedModel.current = initialModelId; setViewModel(item); }
+  }, [initialModelId, savedModels]);
   useEffect(() => {
     if (!version) { setTemplate(null); return; }
     api(`/projects/${project.id}/training/template?version_id=${encodeURIComponent(version)}`)
       .then(setTemplate).catch((e) => setError(e.message));
   }, [project.id, version]);
-  useEffect(() => { if (selectedModel) setParams(schemaDefaults(selectedModel)); }, [model, selectedModel]);
+  useEffect(() => {
+    if (selectedModel && configuredModel.current !== model) { configuredModel.current = model; setParams(retryConfig?.base_model === model ? retryConfig.hyperparameters : schemaDefaults(selectedModel)); setRetryConfig(null); }
+  }, [model, selectedModel]);
+  function cloneJob(job) {
+    setVersion(job.version_id); setKind(job.compute_target.kind); setEndpoint(job.compute_target.endpoint || "");
+    setCpu(job.compute_target.cpu); setGpu(job.compute_target.gpu);
+    if (job.base_model === model) setParams(job.hyperparameters);
+    else { setRetryConfig(job); setModel(job.base_model); }
+    if (job.compute_target.kind === "remote") { setCaps(null); setProbe("Test the saved remote agent before starting a new run."); }
+    document.querySelector(".training-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
   async function testRemote() {
     setProbe("Testing…"); setError("");
     try { const result = await api("/training/probe", { method: "POST", body: JSON.stringify({ kind: "remote", endpoint, cpu: true, gpu: false }) });
@@ -104,6 +136,7 @@ export default function Training({ project }) {
     }) }); await refreshJobs(); } catch (e) { setTrainingErrors((current) => [...current, { message: e.message || "Training could not be started." }]); } finally { setBusy(false); }
   }
   return <div className="training-layout">
+    {viewModel && <ModelEvaluation project={project} model={{ ...viewModel, version_name: versions.find((item) => item.id === viewModel.version_id)?.name }} onClose={() => setViewModel(null)} />}
     <TrainingErrorDialog error={trainingErrors[0]} onClose={() => setTrainingErrors((current) => current.slice(1))} />
     <div className="page-heading"><div><h2>Model training</h2><p className="muted">Train against an immutable dataset version and track the run in MLflow.</p></div>
       </div>
@@ -148,16 +181,26 @@ export default function Training({ project }) {
       </section>
       <div className="training-submit"><span className="muted small">{compatibleModels.length} compatible · {models.length - compatibleModels.length} visible but unavailable</span><button className="primary" disabled={busy || !version || !model || (kind === 'local' && !cpu && !gpu)}>{busy ? "Queuing…" : "Start training"}</button></div>
     </form>
-    <div className="page-heading jobs-heading"><div><h2>Training jobs</h2><p className="muted">Jobs continue on the selected compute agent when you leave this page.</p></div></div>
+    <div className="page-heading jobs-heading"><div><h2>Training jobs</h2><p className="muted">Compute-agent jobs continue when you refresh or close this page. Status and logs are restored automatically.</p></div><button onClick={refreshJobs}>Refresh status</button></div>
     {!jobs.length ? <div className="empty"><h2>No training jobs yet</h2><p>Publish a dataset version, choose a model, and start your first run.</p></div> :
-      <div className="panel table-wrap"><table><thead><tr><th>STATUS</th><th>RUN / MODEL</th><th>VERSION</th><th>COMPUTE</th><th>RESULT</th></tr></thead><tbody>{jobs.map((job) =>
-        <tr key={job.id}><td><span className={`job-status ${job.status}`}>{job.status}</span></td><td><strong>{job.run_name || job.base_model}</strong><div className="muted small">{job.base_model}</div></td><td>{versions.find((v) => v.id === job.version_id)?.name || job.version_id.slice(0,8)}</td>
-          <td>{job.compute_target.kind}{job.compute_target.gpu ? " · GPU" : " · CPU"}</td><td>{job.error || (Object.keys(job.metrics).length ? <details><summary>View training metrics</summary><dl className="training-metrics">{Object.entries(job.metrics).map(([key, value]) => <div key={key}><dt>{key.replaceAll("_", " ")}</dt><dd>{typeof value === "number" ? Number(value.toPrecision(5)) : String(value)}</dd></div>)}</dl></details> : "-")}
-            <div className="training-job-actions">
-              {["queued", "running", "succeeded"].includes(job.status) && liveMetricsEnabled(job.hyperparameters, models.find((item) => item.key === job.base_model)) && dashboardUrl(caps, job) &&
-                <a className="button" href={dashboardUrl(caps, job)} target="_blank" rel="noopener noreferrer"><span aria-hidden="true">▥</span> View live metrics</a>}
-              {job.artifact_available && <a className="button" href={`/api/projects/${project.id}/training/jobs/${job.id}/artifact`}><span aria-hidden="true">↓</span> Download Model</a>}
-              {job.mlflow_url && <a className="button" href={job.mlflow_url} target="_blank" rel="noopener noreferrer"><span aria-hidden="true">↗</span> View on MLflow</a>}
-            </div></td></tr>)}</tbody></table></div>}
+      <div className="training-job-list">{jobs.map((job) => <article className="panel training-job-card" key={job.id}>
+        <header><div><strong>{job.run_name || job.base_model}</strong><p className="muted small">{job.base_model} · {versions.find((value) => value.id === job.version_id)?.name || job.version_id.slice(0, 8)} · {job.compute_target.kind} {job.compute_target.gpu ? "GPU" : "CPU"}</p></div><span className={`job-status ${job.status}`}>{job.status}</span></header>
+        <dl className="training-job-facts"><div><dt>Phase</dt><dd>{job.phase || job.status}</dd></div><div><dt>Elapsed</dt><dd>{elapsedTime(job, clock)}</dd></div><div><dt>Heartbeat</dt><dd>{heartbeatText(job, clock)}</dd></div><div><dt>Latest metric</dt><dd>{job.latest_metric?.name ? `${job.latest_metric.name.replaceAll("_", " ")}: ${Number(job.latest_metric.value).toPrecision(4)}` : "Waiting for metrics"}</dd></div></dl>
+        {job.error && <p className={job.status === "failed" ? "warning-text" : "muted"}>{job.error}</p>}
+        <div className="training-job-actions">
+          {["queued", "running", "succeeded"].includes(job.status) && liveMetricsEnabled(job.hyperparameters, models.find((item) => item.key === job.base_model)) && dashboardUrl(caps, job) &&
+            <a className="button" href={dashboardUrl(caps, job)} target="_blank" rel="noopener noreferrer"><span aria-hidden="true">▥</span> View live metrics</a>}
+          {job.artifact_available && <a className="button" href={`/api/projects/${project.id}/training/jobs/${job.id}/artifact`}><span aria-hidden="true">↓</span> Download Model</a>}
+          {savedModels.some((item) => item.training_job_id === job.id) && <button onClick={() => setViewModel(savedModels.find((item) => item.training_job_id === job.id))}>View model</button>}
+          {["failed", "succeeded"].includes(job.status) && <button onClick={() => cloneJob(job)}>{job.status === "failed" ? "Retry configuration" : "Clone configuration"}</button>}
+          {job.mlflow_url && <a className="button" href={job.mlflow_url} target="_blank" rel="noopener noreferrer"><span aria-hidden="true">↗</span> View on MLflow</a>}
+        </div>
+        <details className="training-job-logs"><summary>Latest logs ({job.logs?.length || 0})</summary><pre aria-label={`Logs for ${job.run_name || job.id}`}>{job.logs?.length ? job.logs.map((line) => `${new Date(line.time).toLocaleTimeString()}  ${line.message}`).join("\n") : "Waiting for agent logs. Older agents only report their final result."}</pre></details>
+        {Object.keys(job.metrics).length > 0 && <details><summary>All metrics</summary><dl className="training-metrics">{Object.entries(job.metrics).map(([key, value]) => <div key={key}><dt>{key.replaceAll("_", " ")}</dt><dd>{Number(value).toPrecision(5)}</dd></div>)}</dl></details>}
+      </article>)}</div>}
+    <div className="page-heading"><div><h2>Saved models</h2><p className="muted">Open a model to inspect predictions and evaluate its recorded held-out dataset.</p></div></div>
+    {!savedModels.length ? <p className="muted">Saved models appear after successful training.</p> : <div className="saved-model-grid">{savedModels.map((item) => <button className="panel saved-model-card" key={item.id} onClick={() => setViewModel(item)}>
+      <strong>{item.run_name || item.name}</strong><span className="muted">Model v{item.model_version} · {item.held_out_samples} held-out images</span><span>View predictions ↗</span>
+    </button>)}</div>}
   </div>;
 }

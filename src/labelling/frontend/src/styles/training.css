@@ -59,3 +59,38 @@
 .config-help button:focus-visible, .config-info:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .training-error p { overflow-wrap: anywhere; }
+
+.training-job-list { display: grid; gap: 12px; }
+.training-job-card { padding: 14px 16px; }
+.training-job-card header { display: flex; justify-content: space-between; align-items: start; gap: 12px; }
+.training-job-card header strong { overflow-wrap: anywhere; }
+.training-job-card header p { margin: 4px 0 8px; }
+.training-job-facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px 16px; margin: 6px 0; }
+.training-job-facts dt { font-size: 11px; color: var(--muted); }
+.training-job-facts dd { margin: 3px 0 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.training-job-card .training-job-actions :is(button, .button) { min-height: 28px; padding: 4px 8px; font-size: 12px; white-space: nowrap; }
+.training-job-card details { margin-top: 8px; }
+.training-job-logs pre { max-height: 180px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--canvas); color: inherit; padding: 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 11px; }
+.saved-model-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.saved-model-card { display: grid; justify-content: stretch; justify-items: start; text-align: left; gap: 7px; padding: 16px; }
+.saved-model-card strong { overflow-wrap: anywhere; }
+.saved-model-card > span:last-child { color: var(--accent-ink); }
+.model-evaluation { width: min(1100px, calc(100vw - 32px)); max-height: 88vh; overflow: auto; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--panel); color: inherit; padding: 20px; }
+.model-evaluation::backdrop { background: #0008; }
+.model-evaluation h2 { overflow-wrap: anywhere; }
+.evaluation-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin: 14px 0; }
+.evaluation-actions label { display: flex; align-items: center; gap: 8px; }
+.evaluation-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.evaluation-metrics > div { border: 1px solid var(--line); padding: 10px; border-radius: 8px; }
+.evaluation-metrics dt { color: var(--muted); font-size: 11px; }
+.evaluation-metrics dd { margin: 5px 0 0; font-size: 18px; font-variant-numeric: tabular-nums; }
+.evaluation-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+.evaluation-grid figure { margin: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.evaluation-image { position: relative; background: var(--canvas); }
+.evaluation-image img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.evaluation-image svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.evaluation-grid figcaption { display: grid; gap: 6px; padding: 10px; overflow-wrap: anywhere; font-size: 12px; }
+@media (max-width: 650px) { .training-job-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+.model-evaluation > .modal-heading { position: sticky; top: -20px; z-index: 2; padding: 8px 0; background: var(--panel); }
+.saved-model-card .muted { font-weight: 400; }
