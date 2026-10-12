@@ -62,7 +62,7 @@ See [Workspace authoring](docs/workspace-authoring.md) for the directory layout 
 Install the current `ai_interfaces` contracts in another workspace from their package release tag:
 
 ```bash
-pip install "ai-infra-interfaces @ git+https://github.com/wecet/ai-infra.git@ai-interfaces-v0.2.1#subdirectory=libs/ai_interfaces"
+pip install "ai-infra-interfaces @ git+https://github.com/wecet/ai-infra.git@ai-interfaces-v0.3.0#subdirectory=libs/ai_interfaces"
 ```
 
 ## Configuration
@@ -89,16 +89,16 @@ Do not use `docker compose down -v` unless you intend to delete all labelling, l
 
 ## Releases and GitHub Packages
 
-The current platform release is `v1.1.0`. Pull its multi-platform runtime packages with:
+The current platform release is `v1.2.0`. Pull its multi-platform runtime packages with:
 
 ```bash
-docker pull ghcr.io/wecet/ai-infra/labelling:v1.1.0
-docker pull ghcr.io/wecet/ai-infra/training-agent:v1.1.0
+docker pull ghcr.io/wecet/ai-infra/labelling:v1.2.0
+docker pull ghcr.io/wecet/ai-infra/training-agent:v1.2.0
 ```
 
 Pushing a semantic version tag, or manually running **Publish platform release**, publishes both images for AMD64 and ARM64. The workflow creates a GitHub Release containing offline Linux AMD64 OCI archives plus Compose and environment templates already configured for the published images. It uses the repository-provided `GITHUB_TOKEN`; no additional publishing secrets are required.
 
-The independently versioned Python model-contract package is currently `ai-interfaces-v0.2.1`; its GitHub Release contains the wheel and source distribution.
+The independently versioned Python model-contract package is currently `ai-interfaces-v0.3.0`; its GitHub Release contains the wheel and source distribution.
 
 ## Persistence and migration
 
@@ -130,4 +130,4 @@ Set **Default train split (%)** in Manage, then publish from Dashboard. Publishi
 
 Train a published version using the bundled **Colour distance anomaly baseline**, or an installed `anomaly_detection` workbench. The baseline fits mean RGB features and a score threshold using only training images, then reports held-out anomaly scores and the flagged fraction. Its downloadable JSON artifact contains the centroid, threshold, feature recipe, and configuration. This is a pipeline demo, not a production anomaly detector. With unlabelled test data, the metrics do not claim detection accuracy. Prepare representative normal training data for normality-based models. A zero-sized training partition cannot be trained.
 
-Anomaly jobs use the existing local/remote compute, MLflow tracking, artifact download, model registration, and lineage flows. Custom implementations can use `AnomalyDetectionModel` and `AnomalyModelConfig` from `ai_interfaces` (empty `class_names`). Install these new contracts from this checkout with `pip install -e libs/ai_interfaces`; the existing published v0.2.1 release predates anomaly support. They must respect the frozen `split` on each manifest image; held-out test samples must not enter fitting or threshold calibration.
+Anomaly jobs use the existing local/remote compute, MLflow tracking, artifact download, model registration, and lineage flows. Custom implementations can use `AnomalyDetectionModel` and `AnomalyModelConfig` from `ai_interfaces` (empty `class_names`). Use the published `ai-interfaces-v0.3.0` contracts or install this checkout with `pip install -e libs/ai_interfaces`. They must respect the frozen `split` on each manifest image; held-out test samples must not enter fitting or threshold calibration.

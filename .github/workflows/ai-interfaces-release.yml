@@ -81,6 +81,8 @@ jobs:
 
           \`pip install https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/ai_infra_interfaces-${PACKAGE_VERSION}-py3-none-any.whl\`
 
+          Includes framework-neutral classification, detection and anomaly contracts, described Pydantic fields, and optional TrainingContext.report_progress events. Existing trainers remain compatible when the progress callback is absent.
+
           The source distribution is attached for source-based installation and auditing.
           EOF
           gh release create "$TAG" \

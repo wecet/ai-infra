@@ -68,8 +68,8 @@ jobs:
             type=raw,value=${{ steps.version.outputs.value }}
             type=raw,value=latest
           labels: |
-            org.opencontainers.image.title=Labelling Studio
-            org.opencontainers.image.description=Image classification and object detection labelling workspace
+            org.opencontainers.image.title=AI Studio
+            org.opencontainers.image.description=Vision dataset, training and model evaluation workspace
             org.opencontainers.image.version=${{ steps.version.outputs.value }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
 
@@ -147,7 +147,9 @@ jobs:
           \`docker pull ghcr.io/${GITHUB_REPOSITORY}/labelling:${VERSION}\`
           \`docker pull ghcr.io/${GITHUB_REPOSITORY}/training-agent:${VERSION}\`
 
-          This release adds dataset lineage, published-version comparison, training workbench discovery, configurable model contracts, and compact project navigation.
+          This release adds agent-owned asynchronous training with persisted progress and restart reattachment, fixed held-out model evaluation, unsupervised anomaly datasets, workspace-specific Enum configuration, and improved light/dark UI.
+
+          Upgrade Studio and the training agent together. Use ai-interfaces-v0.3.0 for anomaly model contracts and optional structured progress reporting. Agent process restarts mark interrupted trainers failed; checkpoint resume is not included.
 
           The attached OCI archives are provided for offline Linux AMD64 installations. The Compose and preconfigured environment templates are included for complete-stack deployment.
           EOF
