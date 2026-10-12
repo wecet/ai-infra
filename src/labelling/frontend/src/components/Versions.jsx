@@ -59,10 +59,10 @@ function Versions({ project, initialVersion = "" }) {
           </button></div></td></tr>)}</tbody></table></div>}
     {selected && <div className="modal-backdrop"><div className="panel version-modal"><div className="modal-heading"><div>
       <div className="eyebrow">IMMUTABLE DATASET SNAPSHOT</div><h2>{selected.name}</h2></div><button onClick={() => setSelected(null)}>Close</button></div>
-      <p className="muted">{selected.sample_count} samples · {selected.snapshot.project.classes.length} classes · published by {selected.author}</p>
+      <p className="muted">{selected.sample_count} samples · {project.annotation_type === "anomaly_detection" ? `${selected.snapshot.images.filter((image) => image.split === "train").length} train / ${selected.snapshot.images.filter((image) => image.split === "test").length} test` : `${selected.snapshot.project.classes.length} classes`} · published by {selected.author}</p>
       <div className="version-grid">{selected.snapshot.images.map((image) => <figure key={image.id}>
         <img src={`/api/projects/${project.id}/versions/${selected.id}/images/${image.id}/file`} alt={image.source_path} />
-        <figcaption title={image.source_path}>{image.source_path}<span>{image.completed ? "Complete" : "Draft"} · {image.boxes.length + image.labels.length} annotations</span></figcaption>
+        <figcaption title={image.source_path}>{image.source_path}<span>{project.annotation_type === "anomaly_detection" ? `${image.split} · Unlabelled` : `${image.completed ? "Complete" : "Draft"} · ${image.boxes.length + image.labels.length} annotations`}</span></figcaption>
       </figure>)}</div></div></div>}
   </div>;
 }
