@@ -31,12 +31,14 @@ test("workspace choices resolve their own enums without injecting demo options",
   const schema = { $defs: {
     Callback: { type: "string", enum: ["early_stopping", "checkpoint"] },
     Flip: { type: "string", const: "horizontal" },
+    Augmentation: { type: "string", enum: ["flip"] },
   }, properties: {
     callbacks: { type: "array", items: { $ref: "#/$defs/Callback" }, default: ["checkpoint"] },
-    augmentations: { type: "object", properties: { flip: { $ref: "#/$defs/Flip" } }, default: {} },
+    augmentations: { type: "object", propertyNames: { $ref: "#/$defs/Augmentation" }, properties: { flip: { $ref: "#/$defs/Flip" } }, default: {} },
   } };
   assert.deepEqual(resolveSchema(schema.properties.callbacks, schema).items.enum, ["early_stopping", "checkpoint"]);
   assert.deepEqual(resolveSchema(schema.properties.augmentations, schema).properties.flip.enum, ["horizontal"]);
+  assert.deepEqual(resolveSchema(schema.properties.augmentations, schema).propertyNames.enum, ["flip"]);
   assert.deepEqual(schemaDefaults({ config_schema: schema }), { callbacks: ["checkpoint"], augmentations: {} });
   assert.equal(liveMetricsEnabled({}, { config_schema: schema }), false);
   assert.equal("callbacks" in schemaDefaults({ config_schema: { properties: {} } }), false);

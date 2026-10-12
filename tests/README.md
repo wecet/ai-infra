@@ -71,6 +71,11 @@ connection has been tested.
 ## On-the-fly training augmentations
 
 Each model's `augmentor.py` applies the `augmentations` dictionary at sample load
+time using options declared by the `Augmentation` Enum in its config. Callbacks are
+declared by the `Callback` Enum; flip directions use `FlipDirection`. Both workspace
+configs expose the shared enums, with validation of each augmentation's value.
+The dictionary remains JSON-compatible, for example `{"blur": 1, "flip": "vertical"}`.
+Augmentations run at sample load
 time. Defaults are `{}` (no augmentation). For example:
 
 ```json

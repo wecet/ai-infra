@@ -136,13 +136,38 @@ TensorFlow, ONNX, or a custom runtime without changing the infrastructure contra
 
 Callback and augmentation controls belong to each workbench's `config_type`, not
 to the framework or the Studio defaults. Omit either field when unsupported.
-Declare callbacks as a list of `Literal` values or an enum containing only callbacks
-your implementation handles; for example, `list[Literal["early_stopping", "checkpoint"]]`.
-Declare augmentation options with a typed dictionary or Pydantic model and descriptions
-for its supported keys. Studio uses that schema for choices, help text and defaults,
-including referenced enums. An unrestricted `dict` cannot advertise a finite set of
-supported options, so it remains a JSON editor. Declaring an option does not implement
-it: the workbench must apply the callback or augmentation during training.
+Workspace `config.py` should list supported callbacks and augmentation keys as string
+Enums and use them in its Pydantic field types:
+
+```python
+from enum import Enum
+from pydantic import Field
+
+class Callback(str, Enum):
+    CHECKPOINT = "checkpoint"
+    EARLY_STOPPING = "early_stopping"
+
+class Augmentation(str, Enum):
+    BLUR = "blur"
+    FLIP = "flip"
+
+class FlipDirection(str, Enum):
+    HORIZONTAL = "horizontal"
+    VERTICAL = "vertical"
+
+class Config(BaseModelConfig):
+    callbacks: list[Callback] = Field(default=[], description="Enabled training callbacks.")
+    augmentations: dict[Augmentation, float | FlipDirection] = Field(
+        default={}, description="Training augmentation options and their settings.")
+```
+
+Add key-specific validation for augmentation settings (for example, blur must be a
+nonnegative number and flip must be a direction). The demos combine enum keys with
+typed-dictionary validation and JSON-schema properties for per-option descriptions
+and limits. Studio resolves callback enums and augmentation `propertyNames` enums
+for workspace-specific choices and help. Augmentation values remain a JSON editor.
+Older Literal/typed-dictionary configs remain compatible. Declaring an option does
+not implement it: the workbench must apply it during training.
 
 ### Anomaly detection
 

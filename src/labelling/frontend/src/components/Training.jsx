@@ -37,7 +37,7 @@ function ConfigField({ name, schema, value, required, onChange }) {
       <div className="config-help-heading"><h2 id={`${id}-help-title`}>{title}</h2><button type="button" onClick={() => dialog.current.close()}>Close</button></div>
       <p id={`${id}-help-description`}>{schema.description?.trim() || "No description defined"}</p>
       {schema.type === "array" && schema.items?.enum && <p className="muted">Cmd/Ctrl-click to select multiple options. Select None to disable all options.</p>}
-      {schema.properties && <div className="config-help-options"><h3>Supported options</h3>{Object.entries(schema.properties).map(([key, property]) =>
+      {(schema.properties || schema.propertyNames?.enum) && <div className="config-help-options"><h3>Supported options</h3>{(schema.propertyNames?.enum ? schema.propertyNames.enum.map((key) => [key, schema.properties?.[key] || schema.additionalProperties || {}]) : Object.entries(schema.properties)).map(([key, property]) =>
         <p key={key}><strong>{key}</strong>: {property.enum?.join(" / ") || property.type}
           {property.minimum !== undefined && ` (${property.minimum}–${property.maximum ?? "∞"})`}<br />{property.description?.trim() || "No description defined"}</p>)}</div>}
     </dialog>

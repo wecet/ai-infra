@@ -7,6 +7,7 @@ from pytorch_classification.augmentor import Augmentor as ClassificationAugmento
 from pytorch_classification.config import ClassificationConfig
 from pytorch_detection.augmentor import Augmentor as DetectionAugmentor
 from pytorch_detection.config import DetectionConfig
+from demo_support.config import Augmentation, Callback
 
 
 def config(model_type, **options):
@@ -48,6 +49,18 @@ def test_config_defaults_and_invalid_options():
                         {"augmentations": {"unknown": 1}}, {"callbacks": ["unknown"]}):
             with pytest.raises(ValidationError):
                 config(model_type, **invalid)
+
+
+def test_enum_options_are_exported_and_round_trip_as_json():
+    for model_type in (ClassificationConfig, DetectionConfig):
+        value = config(model_type, augmentations={"blur": 1, "flip": "vertical"})
+        assert all(isinstance(key, Augmentation) for key in value.augmentations)
+        assert all(isinstance(item, Callback) for item in value.callbacks)
+        assert value.model_dump(mode="json")["augmentations"] == {"blur": 1.0, "flip": "vertical"}
+        schema = model_type.model_json_schema()
+        assert schema["$defs"]["Callback"]["enum"] == ["tensorboard", "gradcam"]
+        assert schema["$defs"]["Augmentation"]["enum"] == [item.value for item in Augmentation]
+        assert schema["properties"]["augmentations"]["propertyNames"]["$ref"] == "#/$defs/Augmentation"
 
 
 def test_valid_subpixel_boxes_survive_augmentation():

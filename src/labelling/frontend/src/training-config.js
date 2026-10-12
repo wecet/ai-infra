@@ -8,6 +8,7 @@ export function resolveSchema(property, schema, seen = new Set()) {
   const field = { ...(referenced ? resolveSchema(referenced, schema, nextSeen) : {}), ...property };
   if (field.const !== undefined && !field.enum) field.enum = [field.const];
   if (field.items) field.items = resolveSchema(field.items, schema, nextSeen);
+  if (field.propertyNames) field.propertyNames = resolveSchema(field.propertyNames, schema, nextSeen);
   if (field.properties) field.properties = Object.fromEntries(Object.entries(field.properties).map(([key, value]) => [key, resolveSchema(value, schema, nextSeen)]));
   return field;
 }
