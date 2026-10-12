@@ -200,3 +200,93 @@ MODEL_CLASS = Model
     assert len(found) == 1 and found[0]['available'], found
     assert found[0]['task'] == 'anomaly_detection'
     assert found[0]['config_schema']['properties']['class_names']['default'] == []
+
+
+def test_async_job_survives_clients_and_keeps_progress(tmp_path, monkeypatch):
+    import threading
+    import time
+    import jobs
+    entered, release = threading.Event(), threading.Event()
+    monkeypatch.setattr(app, 'RUNS_ROOT', tmp_path / 'runs')
+    def handler(manifest, directory, report):
+        report(phase='training', metrics={'train_loss': 0.4}, message='Epoch 1/2')
+        entered.set(); release.wait(5)
+        report(phase='validating', message='Checking validation samples')
+        return {'metrics': {'validation_loss': 0.3}}
+    monkeypatch.setattr(app, 'execute_training', handler)
+    manifest = {'job_id': 'async-client-test'}
+    with TestClient(app.app) as client:
+        accepted = client.post('/api/v1/jobs', data={'manifest': json.dumps(manifest)},
+            files={'dataset': ('dataset.zip', dataset_zip(), 'application/zip')})
+        assert accepted.status_code == 202 and entered.wait(2)
+    # Closing and creating another client must not cancel work or clear its progress.
+    try:
+        with TestClient(app.app) as client:
+            state = client.get('/api/v1/jobs/async-client-test').json()
+            assert state['status'] == 'running' and state['phase'] == 'training'
+            assert state['metrics']['train_loss'] == 0.4
+            assert state['heartbeat_at'] and state['logs'][-1]['message'] == 'Epoch 1/2'
+            duplicate = client.post('/api/v1/jobs', data={'manifest': json.dumps(manifest)},
+                files={'dataset': ('dataset.zip', dataset_zip(), 'application/zip')})
+            assert duplicate.status_code == 202
+            release.set()
+            for _ in range(100):
+                state = client.get('/api/v1/jobs/async-client-test').json()
+                if state['status'] == 'succeeded': break
+                time.sleep(0.01)
+            assert state['status'] == 'succeeded'
+            assert client.get('/api/v1/jobs/async-client-test/result').json()['metrics']['validation_loss'] == 0.3
+            assert len([entry for entry in state['logs'] if entry['message'] == 'Epoch 1/2']) == 1
+    finally: release.set()
+    # State is persisted on disk, not tied to the request/client.
+    assert jobs.status(app.jobs_root(), 'async-client-test')['status'] == 'succeeded'
+
+
+def test_restart_reports_interruption_instead_of_claiming_training_completed(tmp_path):
+    import jobs
+    root = tmp_path / 'jobs'; directory = root / 'interrupted'; directory.mkdir(parents=True)
+    jobs.write(directory / 'status.json', {'status': 'running', 'logs': []})
+    jobs.recover(root, {})
+    state = jobs.status(root, 'interrupted')
+    assert state['status'] == 'failed' and state['phase'] == 'interrupted'
+    assert 'restarted' in state['error']
+
+
+def test_evaluation_metrics_failures_and_unlabelled_anomaly_scores(tmp_path):
+    from evaluation import evaluate
+    def archive(root, records):
+        root.mkdir()
+        with zipfile.ZipFile(root / 'dataset.zip', 'w') as bundle:
+            for record in records:
+                image = io.BytesIO(); Image.new('RGB', (8, 8), (255, 0, 0)).save(image, 'PNG')
+                bundle.writestr(record['file_name'], image.getvalue())
+            bundle.writestr('annotations/data.json', json.dumps({'images': records,
+                'annotations': [], 'categories': [{'id': 1, 'name': 'red'}, {'id': 2, 'name': 'blue'}]}))
+    root = tmp_path / 'classification'
+    records = [{'id': i, 'studio_image_id': str(i), 'file_name': f'images/{i}.png', 'width': 8, 'height': 8,
+                'category_ids': [1] if i == 0 else [2]} for i in range(2)]
+    archive(root, records)
+    (root / 'input-model').write_text(json.dumps({'centroids': {'1': [255, 0, 0], '2': [0, 0, 255]}}))
+    result = evaluate({'annotation_type': 'image_classification', 'base_model': 'histogram-centroid-v1'}, root,
+        lambda **values: None, None, None)
+    assert result['metrics']['exact_match_accuracy'] == 0.5
+    assert result['metrics']['precision'] == 0.5 and result['metrics']['recall'] == 0.5
+    assert len(result['failure_examples']) == 1 and result['failure_examples'][0]['image_id'] == '1'
+    root = tmp_path / 'anomaly'
+    # More than the display limit ensures aggregate metrics are not calculated from previews.
+    records = [{**records[0], 'id': i, 'studio_image_id': str(i), 'file_name': f'images/{i}.png'} for i in range(105)]
+    archive(root, records)
+    (root / 'input-model').write_text(json.dumps({'centroid': [0, 0, 1], 'threshold': 0.1}))
+    result = evaluate({'annotation_type': 'anomaly_detection', 'base_model': 'colour-distance-anomaly-v1'}, root,
+        lambda **values: None, None, None)
+    assert result['metrics']['flagged_fraction'] == 1
+    assert result['sample_count'] == 105 and len(result['predictions']) == 100
+    assert result['failure_examples'] == [] and len(result['flagged_examples']) == 50
+    assert 'accuracy' not in result['metrics']
+
+
+def test_detection_iou_matches_boxes_by_class():
+    from evaluation import iou
+    assert iou([0, 0, 10, 10], [0, 0, 10, 10]) == 1
+    assert iou([0, 0, 10, 10], [20, 20, 10, 10]) == 0
+    assert round(iou([0, 0, 10, 10], [5, 0, 10, 10]), 5) == round(1 / 3, 5)

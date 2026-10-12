@@ -10,6 +10,8 @@ import zipfile
 import uuid
 from pathlib import Path
 
+from contextlib import asynccontextmanager
+import jobs as agent_jobs
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from PIL import Image, ImageStat
 from ai_interfaces import AnomalyModelConfig, BaseModelConfig, DatasetVersion, TrainingContext
@@ -19,7 +21,16 @@ from workbenches import discover_workbenches, find_workbench, load_model
 RUNS_ROOT = Path(os.environ.get("TRAINING_RUNS_ROOT", "/tmp/training-runs"))
 TENSORBOARD_URL = os.environ.get("TENSORBOARD_PUBLIC_URL", "")
 
-app = FastAPI(title="ai-infra compute agent")
+def jobs_root(): return RUNS_ROOT / ".jobs"
+
+
+@asynccontextmanager
+async def lifespan(application):
+    agent_jobs.recover(jobs_root(), {"training": execute_training, "evaluation": execute_evaluation})
+    yield
+
+
+app = FastAPI(title="ai-infra compute agent", lifespan=lifespan)
 
 class AnomalyBaselineConfig(AnomalyModelConfig):
     threshold_quantile: float = Field(default=0.95, gt=0, le=1,
@@ -72,7 +83,7 @@ def capabilities():
             "reason": "GPU runtime is not exposed to this agent" if not gpu else "GPU runtime detected"},
             "models": MODELS, "workbenches": discover_workbenches(),
             "tensorboard": {"available": bool(TENSORBOARD_URL), "url": TENSORBOARD_URL},
-            "workspace_root": os.environ.get("TRAINING_WORKSPACES_ROOT", "/workspaces")}
+            "async_jobs": True, "workspace_root": os.environ.get("TRAINING_WORKSPACES_ROOT", "/workspaces")}
 
 
 def _classification(coco, root):
@@ -135,6 +146,10 @@ def _detection(coco, root):
 
 @app.post("/api/v1/train")
 def train(manifest: str = Form(...), dataset: UploadFile = File(...)):
+    return train_model(manifest, dataset)
+
+
+def train_model(manifest, dataset, report=None):
     try: config = json.loads(manifest)
     except json.JSONDecodeError as exc: raise HTTPException(422, "Invalid training manifest") from exc
     task = config.get("annotation_type"); model_key = config.get("base_model")
@@ -155,6 +170,7 @@ def train(manifest: str = Form(...), dataset: UploadFile = File(...)):
     if not isinstance(run_name, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", run_name):
         raise HTTPException(422, "Invalid run name")
     effective = model_config
+    if report: report(phase="preparing", message="Configuration validated")
     work = Path(tempfile.mkdtemp(prefix="training-"))
     try:
         archive = work / "dataset.zip"
@@ -166,6 +182,7 @@ def train(manifest: str = Form(...), dataset: UploadFile = File(...)):
         files = list((work / "dataset" / "annotations").glob("*.json"))
         if len(files) != 1: raise HTTPException(422, "Dataset must contain one COCO annotation file")
         coco = json.loads(files[0].read_text())
+        if report: report(phase="training", message=f"Training on {len(coco['images'])} images")
         if model_class:
             output = RUNS_ROOT / run_name
             try: output.mkdir(parents=True, exist_ok=False)
@@ -175,7 +192,7 @@ def train(manifest: str = Form(...), dataset: UploadFile = File(...)):
             dataset_version = DatasetVersion(effective.project_id, effective.dataset_version_id,
                 config.get("dataset_name", "dataset"), task, archive, coco.get("categories", []))
             result = model.train(TrainingContext(job_id, dataset_version, output,
-                config.get("hyperparameters", {}), tuple(config.get("devices", ["cpu"]))))
+                config.get("hyperparameters", {}), tuple(config.get("devices", ["cpu"])), report_progress=report))
             artifact_path = result.artifact.path.resolve(); artifact_path.relative_to(output.resolve())
             if not artifact_path.is_file() or artifact_path.stat().st_size > 512 * 1024 * 1024:
                 raise HTTPException(422, "Workbench artifact is missing or exceeds 512 MiB")
@@ -192,9 +209,52 @@ def train(manifest: str = Form(...), dataset: UploadFile = File(...)):
             artifact = {"filename": "model.json", "media_type": "application/json",
                         "content_base64": base64.b64encode(json.dumps(payload, indent=2).encode()).decode()}
             summary = "Reference model trained successfully"
+        if report: report(phase="saving", metrics=metrics, message="Saving trained model")
         return {"status": "succeeded", "metrics": metrics, "artifact": artifact, "summary": summary, "config": effective.model_dump(mode="json")}
     except HTTPException:
         raise
     except Exception as exc:
         raise HTTPException(500, f"Training failed: {type(exc).__name__}: {exc}") from exc
     finally: shutil.rmtree(work, ignore_errors=True)
+
+
+def execute_training(manifest, directory, report):
+    with (directory / "dataset.zip").open("rb") as stream:
+        return train_model(json.dumps(manifest), UploadFile(filename="dataset.zip", file=stream), report)
+
+
+def execute_evaluation(manifest, directory, report):
+    from evaluation import evaluate
+    return evaluate(manifest, directory, report, find_workbench, load_model)
+
+
+def request_manifest(manifest):
+    try: value = json.loads(manifest)
+    except ValueError as error: raise HTTPException(422, "Invalid job manifest") from error
+    if not isinstance(value, dict) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", str(value.get("job_id", ""))):
+        raise HTTPException(422, "Invalid job ID")
+    return value
+
+
+@app.post("/api/v1/jobs", status_code=202)
+def submit_job(manifest: str = Form(...), dataset: UploadFile = File(...)):
+    value = request_manifest(manifest); value["kind"] = "training"
+    return agent_jobs.start(jobs_root(), value["job_id"], value, dataset.file.read(), execute_training)
+
+
+@app.get("/api/v1/jobs/{job_id}")
+def job_status(job_id: str):
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", job_id): raise HTTPException(422, "Invalid job ID")
+    return agent_jobs.status(jobs_root(), job_id)
+
+
+@app.get("/api/v1/jobs/{job_id}/result")
+def job_result(job_id: str):
+    job_status(job_id)
+    return agent_jobs.result(jobs_root(), job_id)
+
+
+@app.post("/api/v1/evaluations", status_code=202)
+def submit_evaluation(manifest: str = Form(...), dataset: UploadFile = File(...), artifact: UploadFile = File(...)):
+    value = request_manifest(manifest); value["kind"] = "evaluation"
+    return agent_jobs.start(jobs_root(), value["job_id"], value, dataset.file.read(), execute_evaluation, artifact.file.read())

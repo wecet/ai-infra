@@ -7,7 +7,7 @@ one predictable way.
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, ClassVar, Generic, Mapping, Sequence, TypeVar
+from typing import Callable, Any, ClassVar, Generic, Mapping, Sequence, TypeVar
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
 
@@ -72,6 +72,7 @@ class TrainingContext:
     output_dir: Path
     hyperparameters: Mapping[str, Any]
     devices: tuple[str, ...] = ("cpu",)
+    report_progress: Callable[..., None] | None = field(default=None, compare=False, repr=False)
 
 
 @dataclass(frozen=True)

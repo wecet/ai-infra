@@ -14,6 +14,7 @@ from demo_support.utils import device_for
 
 
 def train(model, context, loss_for, augmentor):
+    report = context.report_progress or (lambda **values: None)
     config = model.config
     torch.manual_seed(config.random_seed)
     device = device_for(context.devices)
@@ -37,6 +38,7 @@ def train(model, context, loss_for, augmentor):
             writer.add_text("Run/job_id", context.job_id)
             writer.flush()
         for epoch in range(1, config.epochs + 1):
+            report(phase="training", epoch=epoch, epochs=config.epochs, message=f"Epoch {epoch}/{config.epochs}")
             model.network.train()
             started = time.perf_counter()
             total, details = 0.0, {}
@@ -51,12 +53,14 @@ def train(model, context, loss_for, augmentor):
                 for key, value in batch_metrics.items():
                     details[key] = details.get(key, 0.0) + value * len(images)
                 step += 1
+                report(phase="training", step=step, metrics={"batch_loss": loss.item()})
                 if writer:
                     writer.add_scalar("Loss/batch", loss.item(), step)
                     writer.flush()
             metrics["train_loss"] = total / len(training)
             metrics.update({f"train_{key}": value / len(training) for key, value in details.items()})
             if len(validation):
+                report(phase="validating", message=f"Validating epoch {epoch}")
                 # Detection returns losses in train mode; this backbone has no BatchNorm/dropout.
                 model.network.train(model.descriptor().task == "object_detection")
                 with torch.no_grad():
@@ -70,6 +74,7 @@ def train(model, context, loss_for, augmentor):
                 metrics.update({f"validation_{key}": value / len(validation) for key, value in details.items()})
             metrics["epoch_seconds"] = time.perf_counter() - started
             metrics["learning_rate"] = optimizer.param_groups[0]["lr"]
+            report(phase="training", metrics=metrics, message=f"Epoch {epoch} complete")
             if writer:
                 for key, value in metrics.items():
                     writer.add_scalar(f"Metrics/{key}", value, epoch)
@@ -81,6 +86,7 @@ def train(model, context, loss_for, augmentor):
                     gradcam.on_epoch_end(writer, cam_samples, epoch, device)
                 writer.flush()
     model.network.cpu().eval()
+    report(phase="saving", message="Saving model weights")
     artifact = context.output_dir / "model.pt"
     torch.save({"config": config.model_dump(mode="json"), "state_dict": model.network.state_dict()}, artifact)
     return TrainingResult(metrics=metrics, artifact=ModelArtifact(artifact), summary=f"Trained on {len(training)} images; validated on {len(validation)}.")
