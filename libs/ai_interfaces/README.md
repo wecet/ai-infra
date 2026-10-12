@@ -139,3 +139,9 @@ TensorFlow, ONNX, or a custom runtime without changing the infrastructure contra
 Unsupervised workbenches declare `task="anomaly_detection"`, subclass `AnomalyDetectionModel`, and use `AnomalyModelConfig` (or a subclass). It preserves the shared lifecycle while allowing an empty `class_names` tuple. Supervised `BaseModelConfig` still requires classes. The default anomaly `validation_split` is zero because the dataset's partitions are already frozen.
 
 Published anomaly archives contain unlabelled image records in `annotations/*.json`, with empty `categories` and `annotations`. Each image includes `split: "train"` or `split: "test"`; `info` records the split ratio, seed, and partition sizes. Fit and calibrate using training records only. Use test records for held-out scoring. Return predictions such as `{"anomaly_score": 0.8, "is_anomaly": true}`; implementations may additionally return heatmaps.
+
+### Live progress events
+
+`TrainingContext.report_progress` is optional. Use it to report lifecycle phases, log messages and finite numeric metrics without coupling training to a browser or logging service. Existing implementations remain compatible when the callback is absent. The demos report batches/epochs, validation and saving. See [Training jobs and evaluation](../../docs/training-jobs-and-evaluation.md) for the event example and evaluation prediction requirements.
+
+Saved-model evaluation expects JSON-serialisable predictions: classification records use `class_name` and `score`; detection additionally uses `bbox=[x, y, width, height]` in original image pixels; anomaly records use a finite `anomaly_score` and optional `is_anomaly`. The evaluator runs `load(artifact)` before `predict(image)` and uses the saved effective configuration. Workbenches must remain available on the run's agent.

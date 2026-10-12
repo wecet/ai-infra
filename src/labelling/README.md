@@ -134,3 +134,7 @@ Publishing saves each image's train/test assignment into the immutable snapshot.
 ### Project sections
 
 The New Project dialog opens on **Vision**, with object detection, image classification, and unsupervised anomaly detection. **LLM/VLM** and **Language** show **Under Development - Check in Soon**. Those sections hide the creation form and submit button; returning to Vision preserves entered fields.
+
+### Agent-owned jobs and model evaluation
+
+Training jobs now continue independently of browser lifetime and restore phase, elapsed time, heartbeat, latest metrics and recent logs. Saved models open an evaluation dialog on their recorded held-out images, with supervised metrics/failures or unlabelled anomaly scores. See [the complete behavior and recovery limits](../../docs/training-jobs-and-evaluation.md).

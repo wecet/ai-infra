@@ -10,6 +10,12 @@ A self-hosted Docker Compose stack containing:
 
 The labeller supports project ZIP import/export, managed classes, AI-assisted box suggestions, review workflows, immutable versions, lakeFS publishing, dataset lineage, version comparison, dataset quality checks, deletion recovery, comments, train/test exports, and version-bound training jobs. See the [labelling guide](src/labelling/README.md) for the complete workflow.
 
+## Project families and planning
+
+**Vision** includes object detection, image classification and unsupervised anomaly datasets. **LLM/VLM** and **Language** currently display **Under Development - Check in Soon**.
+
+Use the [documentation index](docs/README.md) for current capabilities, operating guides and proposals. The [roadmap](docs/roadmap.md) prioritizes job reliability, reproducible splits, evaluation, and future project families; the [UI/UX plan](docs/ui-ux-roadmap.md) describes usability improvements. Roadmap entries are proposals, not delivery commitments.
+
 ## Quick start
 
 Docker with the Compose plugin is the only deployment prerequisite.
@@ -41,9 +47,13 @@ lakeFS is initialized automatically from the `LAKEFS_*` values in `.env`. Log in
 
 Publish an immutable dataset from the Dashboard, then open the project's **Training** tab. Choose the version, installed base model, hyperparameters, and compute target. For remote compute, run the training-agent image on another machine, expose port `8090`, enter its IP and port, and test the connection before starting the job.
 
-The bundled models are lightweight baseline trainers: a colour-centroid classifier and a class box-prior detector. They exercise the complete job, artifact, and MLflow path without downloading a heavyweight framework. Two discoverable PyTorch demos live in [`tests`](tests/README.md): a multi-label CNN classifier and a Faster R-CNN detector with a tiny backbone. The training-agent image installs their PyTorch dependencies. **View live metrics** opens TensorBoard in a new tab; losses and Grad-CAM visualizations are logged during training and retained in the training-runs volume. Other PyTorch, TensorFlow, or ONNX packages plug into the public contracts in [`libs/ai_interfaces`](libs/ai_interfaces/README.md).
+The bundled models are lightweight baseline trainers: a colour-centroid classifier, a class box-prior detector and an unsupervised colour-distance anomaly scorer. They exercise the complete job, artifact, and MLflow path without downloading a heavyweight framework. Two discoverable PyTorch demos live in [`tests`](tests/README.md): a multi-label CNN classifier and a Faster R-CNN detector with a tiny backbone. The training-agent image installs their PyTorch dependencies. **View live metrics** opens TensorBoard in a new tab; losses and Grad-CAM visualizations are logged during training and retained in the training-runs volume. Other PyTorch, TensorFlow, or ONNX packages plug into the public contracts in [`libs/ai_interfaces`](libs/ai_interfaces/README.md).
 
 Training configuration fields use their Pydantic defaults and expose `Field(description="...")` through the information button beside each label. Missing descriptions show **No description defined**. Start-request errors and newly failed background runs open a closable error popup; the training page and entered configuration remain available for correction and retry. Trainer exception details are retained in the failed job's result. Close the popup with **Close** or **Escape**; polling does not repeatedly reopen the same failure or replay historical failures when entering the page.
+
+Training is owned by the compute agent rather than the browser. Refreshing or closing Training does not cancel a job; returning restores persisted logs and current phase, elapsed time, heartbeat and metrics in compact cards. Studio can reattach after restart; agent restarts mark interrupted runs for retry. See [Training jobs and evaluation](docs/training-jobs-and-evaluation.md) for recovery limits and the progress callback.
+
+New jobs record a fixed held-out partition and exclude those images from fitting. Click a **saved model** or **View model** to open its evaluation dialog: predictions, task-specific metrics and supervised failure examples are saved against that model and dataset version. Anomaly results show scores and flagged examples without claiming labelled accuracy. Older models without held-out provenance explain why verified evaluation is unavailable.
 
 The project **Lineage** tab traces imports, deletion/restoration events, published versions, lakeFS commits, training runs, registered models, and deployments. The **Compare** tab audits any two published versions, including membership, annotations, classes, deterministic train/test assignment, review status, quality metrics, duplicates, and split leakage.
 
