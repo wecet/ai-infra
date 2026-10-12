@@ -130,3 +130,7 @@ Lineage arrows connect individual entries using the recorded graph relationships
 `annotation_type="anomaly_detection"` accepts an empty or omitted class list and rejects class labels. Imported images are internally marked ready (`completed=true`) for shared publishing/export paths, without annotation review. Annotation edits, class creation, and review decisions are unavailable. Quality checks cover similar images and cross-split leakage, not missing annotations. The frontend starts on Dataset Dashboard and offers Images, History, Versions, Compare, Lineage, Training, and Manage.
 
 Publishing saves each image's train/test assignment into the immutable snapshot. `_version_content` forwards those assignments to version exports, lakeFS, and compute agents. Existing supervised archives and completion requirements are unchanged. Anomaly ZIPs exported by the platform can be imported as new unlabelled projects; republishing a new project computes a new split from its saved settings.
+
+### Project sections
+
+The New Project dialog opens on **Vision**, with object detection, image classification, and unsupervised anomaly detection. **LLM/VLM** and **Language** show **Under Development - Check in Soon**. Those sections hide the creation form and submit button; returning to Vision preserves entered fields.

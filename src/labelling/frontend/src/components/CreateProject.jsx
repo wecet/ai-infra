@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { api, color } from "../api";
 
 function CreateProject({ onCancel, onCreated }) {
+  const [section, setSection] = useState("Vision");
   const [name, setName] = useState("");
   const [annotationType, setAnnotationType] = useState("object_detection");
   const [classes, setClasses] = useState([""]);
@@ -9,6 +10,7 @@ function CreateProject({ onCancel, onCreated }) {
   const [error, setError] = useState("");
   async function submit(e) {
     e.preventDefault();
+    if (section !== "Vision") return;
     setBusy(true);
     setError("");
     try {
@@ -29,6 +31,12 @@ function CreateProject({ onCancel, onCreated }) {
     <form className="panel create-form" role="dialog" aria-modal="true" aria-labelledby="create-title" onSubmit={submit}>
       <div className="eyebrow">NEW PROJECT</div>
       <h2 id="create-title">Set up your dataset</h2>
+      <div className="project-category-selector" role="group" aria-label="Project section">
+        {["Vision", "LLM/VLM", "Language"].map((item) => <button type="button" key={item}
+          aria-pressed={section === item} className={section === item ? "primary" : ""} disabled={busy}
+          onClick={() => { setSection(item); setError(""); }}>{item}</button>)}
+      </div>
+      {section === "Vision" ? <>
       <fieldset className="task-selection">
         <legend>Dataset type — choose one</legend>
         {[["object_detection", "Object detection"], ["image_classification", "Image classification"], ["anomaly_detection", "Anomaly detection (unsupervised)"]].map(([value, label]) => (
@@ -91,6 +99,7 @@ function CreateProject({ onCancel, onCreated }) {
       </button>
       </>}
       {annotationType === "anomaly_detection" && <p className="muted">Import unlabelled images, set a train/test split, then publish and train. No classes or annotation steps are required.</p>}
+      </> : <div className="project-under-development" role="status">Under Development - Check in Soon</div>}
       {error && (
         <p className="alert" role="alert">
           {error}
@@ -100,9 +109,9 @@ function CreateProject({ onCancel, onCreated }) {
         <button type="button" disabled={busy} onClick={onCancel}>
           Cancel
         </button>
-        <button className="primary" disabled={busy}>
+        {section === "Vision" && <button className="primary" disabled={busy}>
           {busy ? "Creating…" : "Create project →"}
-        </button>
+        </button>}
       </div>
     </form>
     </div>
