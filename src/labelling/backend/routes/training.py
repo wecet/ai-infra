@@ -201,8 +201,11 @@ def create_job(project_id: str, payload: JobCreate):
     with database() as db:
         db.execute("BEGIN IMMEDIATE")
         project = get_project(db, project_id)
-        version = db.execute("SELECT id FROM dataset_versions WHERE id=? AND project_id=?", (payload.version_id, project_id)).fetchone()
+        version = db.execute("SELECT id,snapshot FROM dataset_versions WHERE id=? AND project_id=?", (payload.version_id, project_id)).fetchone()
         if not version: raise HTTPException(404, "Published version not found")
+        if project["annotation_type"] == "anomaly_detection" and not any(
+                image.get("split") == "train" for image in json.loads(version["snapshot"])["images"]):
+            raise HTTPException(422, "Published anomaly version has no training images. Increase the train split and publish a new version.")
         installed = {item["key"] for item in caps.get("models", {}).get(project["annotation_type"], [])}
         installed.update(item["key"] for item in caps.get("workbenches", [])
                          if item.get("available") and item.get("task") == project["annotation_type"])

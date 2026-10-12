@@ -11,7 +11,10 @@ def _validate_import_document(document, filename):
         raise HTTPException(422, f'{filename}: annotation JSON must be an object')
     images, categories, annotations = (document.get('images'), document.get('categories'),
                                        document.get('annotations', []))
-    anomaly = document.get('info', {}).get('annotation_type') == 'anomaly_detection'
+    info = document.get('info', {})
+    if not isinstance(info, dict):
+        raise HTTPException(422, f'{filename}: info must be an object')
+    anomaly = info.get('annotation_type') == 'anomaly_detection'
     if anomaly and (categories or annotations or any(item.get('category_ids') for item in images or [] if isinstance(item, dict))):
         raise HTTPException(422, f'{filename}: anomaly datasets must be unlabelled')
     if not isinstance(images, list) or not isinstance(categories, list) or (not categories and not anomaly):

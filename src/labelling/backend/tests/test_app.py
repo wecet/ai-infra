@@ -814,7 +814,7 @@ def test_anomaly_training_job_preserves_frozen_split_and_registers_model(client,
             document = json.loads(bundle.read(next(name for name in bundle.namelist() if name.endswith('.json'))))
         assert sum(image['split'] == 'train' for image in document['images']) == 4
         assert sum(image['split'] == 'test' for image in document['images']) == 1
-        return types.SimpleNamespace(raise_for_status=lambda: None, json=lambda: {
+        return types.SimpleNamespace(is_error=False, raise_for_status=lambda: None, json=lambda: {
             'metrics': {'train_samples': 4, 'test_samples': 1},
             'artifact': {'filename': 'model.json', 'content_base64': base64.b64encode(b'{}').decode()}})
     monkeypatch.setattr(training.httpx, 'post', compute)
@@ -826,6 +826,12 @@ def test_anomaly_training_job_preserves_frozen_split_and_registers_model(client,
     assert response.status_code == 202, response.text
     assert captured['annotation_type'] == 'anomaly_detection' and captured['config']['class_names'] == []
     job = client.get(f'/api/projects/{pid}/training/jobs').json()[0]
-    assert job['status'] == 'succeeded' and job['artifact_available'], job
+    assert job['status'] == 'succeeded' and job['artifact_available'], job['error']
     graph = client.get(f'/api/projects/{pid}/lineage').json()
     assert graph['counts']['training_runs'] == graph['counts']['registered_models'] == 1
+    client.put(f'/api/projects/{pid}', json={'name': 'Anomaly training', 'export_train_percent': 0})
+    empty_train = client.post(f'/api/projects/{pid}/publish').json()
+    rejected = client.post(f'/api/projects/{pid}/training/jobs', json={
+        'version_id': empty_train['id'], 'base_model': 'colour-distance-anomaly-v1'})
+    assert rejected.status_code == 422 and 'no training images' in rejected.json()['detail']
+    assert len(client.get(f'/api/projects/{pid}/training/jobs').json()) == 1
