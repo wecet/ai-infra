@@ -1,8 +1,15 @@
 export const managedFields = new Set(["dataset_path", "output_path", "mlflow_url", "project_id", "dataset_version_id", "class_names", "devices"]);
 
-export function resolveSchema(property, schema) {
-  const referenced = property.$ref?.startsWith("#/$defs/") ? schema?.$defs?.[property.$ref.slice(8)] : null;
-  return { ...referenced, ...property };
+export function resolveSchema(property, schema, seen = new Set()) {
+  const reference = property.$ref;
+  const referenced = reference?.startsWith("#/$defs/") && !seen.has(reference) ? schema?.$defs?.[reference.slice(8)] : null;
+  const nextSeen = new Set(seen);
+  if (reference) nextSeen.add(reference);
+  const field = { ...(referenced ? resolveSchema(referenced, schema, nextSeen) : {}), ...property };
+  if (field.const !== undefined && !field.enum) field.enum = [field.const];
+  if (field.items) field.items = resolveSchema(field.items, schema, nextSeen);
+  if (field.properties) field.properties = Object.fromEntries(Object.entries(field.properties).map(([key, value]) => [key, resolveSchema(value, schema, nextSeen)]));
+  return field;
 }
 
 export function schemaDefaults(model) {

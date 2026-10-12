@@ -134,6 +134,16 @@ are rejected.
 Keeping framework objects behind this boundary lets a workspace use PyTorch,
 TensorFlow, ONNX, or a custom runtime without changing the infrastructure contract.
 
+Callback and augmentation controls belong to each workbench's `config_type`, not
+to the framework or the Studio defaults. Omit either field when unsupported.
+Declare callbacks as a list of `Literal` values or an enum containing only callbacks
+your implementation handles; for example, `list[Literal["early_stopping", "checkpoint"]]`.
+Declare augmentation options with a typed dictionary or Pydantic model and descriptions
+for its supported keys. Studio uses that schema for choices, help text and defaults,
+including referenced enums. An unrestricted `dict` cannot advertise a finite set of
+supported options, so it remains a JSON editor. Declaring an option does not implement
+it: the workbench must apply the callback or augmentation during training.
+
 ### Anomaly detection
 
 Unsupervised workbenches declare `task="anomaly_detection"`, subclass `AnomalyDetectionModel`, and use `AnomalyModelConfig` (or a subclass). It preserves the shared lifecycle while allowing an empty `class_names` tuple. Supervised `BaseModelConfig` still requires classes. The default anomaly `validation_split` is zero because the dataset's partitions are already frozen.
