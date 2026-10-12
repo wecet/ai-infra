@@ -108,6 +108,18 @@ def init_db():
             environment TEXT NOT NULL, status TEXT NOT NULL, endpoint TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
         ''')
+        db.execute("""CREATE TABLE IF NOT EXISTS model_evaluations (
+            id TEXT PRIMARY KEY, model_id TEXT NOT NULL REFERENCES registered_models(id),
+            project_id TEXT NOT NULL REFERENCES projects(id), version_id TEXT NOT NULL,
+            status TEXT NOT NULL, agent_job_id TEXT NOT NULL, result TEXT NOT NULL DEFAULT '{}',
+            error TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
+        job_columns = {row['name'] for row in db.execute('PRAGMA table_info(training_jobs)')}
+        for column, definition in (
+            ('phase', "TEXT NOT NULL DEFAULT 'queued'"), ('heartbeat_at', 'TEXT'),
+            ('logs', "TEXT NOT NULL DEFAULT '[]'"), ('latest_metric', "TEXT NOT NULL DEFAULT '{}'"),
+            ('dataset_partition', "TEXT NOT NULL DEFAULT '{}'"), ('effective_config', "TEXT NOT NULL DEFAULT '{}'"),
+        ):
+            if column not in job_columns: db.execute(f'ALTER TABLE training_jobs ADD COLUMN {column} {definition}')
         # Additive migrations preserve annotations from existing deployments.
         if 'tensorboard_url' not in {r['name'] for r in db.execute('PRAGMA table_info(training_jobs)')}:
             db.execute("ALTER TABLE training_jobs ADD COLUMN tensorboard_url TEXT NOT NULL DEFAULT ''")

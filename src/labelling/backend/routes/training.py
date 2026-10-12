@@ -1,6 +1,8 @@
 """Version-bound training orchestration for local and remote compute agents."""
 import base64
 import io
+import math
+import random
 import ipaddress
 import json
 import os
@@ -92,13 +94,37 @@ def training_template(project_id: str, version_id: str):
             "annotation_type": project["annotation_type"], "dataset_name": detail["name"]}
 
 
-def _archive(project_id, version_id):
+def _archive(project_id, version_id, image_ids=None):
     detail = version_detail(project_id, version_id)
-    _, _, objects = _version_content(project_id, version_id, detail)
+    _, manifest, objects = _version_content(project_id, version_id, detail)
+    by_name = {f"images/{item['stored_name']}": item for item in detail['snapshot']['images']}
+    for record in manifest['images']:
+        record['studio_image_id'] = by_name[record['file_name']]['id']
+    if image_ids is not None:
+        allowed = set(image_ids)
+        manifest['images'] = [record for record in manifest['images'] if record['studio_image_id'] in allowed]
+        ids = {record['id'] for record in manifest['images']}
+        manifest['annotations'] = [item for item in manifest['annotations'] if item['image_id'] in ids]
+        files = {record['file_name'] for record in manifest['images']}
+        objects = [item for item in objects if item[0] in files or item[0].endswith('.json')]
+    manifest['info']['archive_samples'] = len(manifest['images'])
+    if manifest['info']['annotation_type'] == 'anomaly_detection':
+        manifest['info']['train_samples'] = sum(image.get('split') == 'train' for image in manifest['images'])
+        manifest['info']['test_samples'] = sum(image.get('split') == 'test' for image in manifest['images'])
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as bundle:
-        for path, content, _ in objects: bundle.writestr(path, content)
+        for path, content, _ in objects:
+            bundle.writestr(path, json.dumps(manifest).encode() if path.endswith('.json') else content)
     return detail, buffer.getvalue()
+
+
+def partition(snapshot):
+    images = sorted(snapshot['images'], key=lambda image: (image['source_path'], image['id']))
+    if all(image.get('split') in {'train', 'test'} for image in images):
+        return {split: [image['id'] for image in images if image['split'] == split] for split in ('train', 'test')}
+    random.Random(42).shuffle(images)
+    cut = math.floor(len(images) * snapshot['project'].get('export_train_percent', 80) / 100 + .5)
+    return {'train': [image['id'] for image in images[:cut]], 'test': [image['id'] for image in images[cut:]], 'seed': 42}
 
 
 def _mlflow(job, metrics, config):
@@ -126,58 +152,134 @@ def _mlflow(job, metrics, config):
         return None
 
 
-def _run(job_id):
-    now = datetime.now(timezone.utc).isoformat()
+_running = set()
+_running_lock = threading.Lock()
+
+
+def start_job(job_id):
+    with _running_lock:
+        if job_id in _running: return
+        _running.add(job_id)
+    threading.Thread(target=_run, args=(job_id,), daemon=True).start()
+
+
+def resume_jobs():
     with database() as db:
-        db.execute("UPDATE training_jobs SET status='running',started_at=? WHERE id=?", (now, job_id))
-        job = dict(db.execute("SELECT * FROM training_jobs WHERE id=?", (job_id,)).fetchone())
-    try:
-        target = json.loads(job["compute_target"]); agent = _agent_url(target)
-        capabilities = _capabilities(agent)
-        if target.get("gpu") and not capabilities["gpu"]["available"]:
-            raise RuntimeError(capabilities["gpu"].get("reason") or "GPU unavailable")
-        detail, archive = _archive(job["project_id"], job["version_id"])
-        hyperparameters = json.loads(job["hyperparameters"])
-        model_config = {"dataset_path": "/workspace/dataset.zip", "output_path": f"/workspace/outputs/{job_id}",
-                        "mlflow_url": MLFLOW_URL, "project_id": job["project_id"],
-                        "dataset_version_id": job["version_id"],
-                        "class_names": [item["name"] for item in detail["snapshot"]["project"]["classes"]],
-                        "devices": [key for key in ("cpu", "gpu") if target.get(key)], **hyperparameters}
-        manifest = {"job_id": job_id, "annotation_type": job["task_type"], "base_model": job["base_model"],
-                    "run_name": job["run_name"] or job_id, "hyperparameters": hyperparameters, "config": model_config,
-                    "devices": model_config["devices"], "dataset_name": detail["name"]}
-        response = httpx.post(f"{agent}/api/v1/train", data={"manifest": json.dumps(manifest)},
-                              files={"dataset": (f"{detail['name']}.zip", archive, "application/zip")}, timeout=3600)
-        if response.is_error:
-            try: detail = response.json().get("detail")
-            except ValueError: detail = None
-            if isinstance(detail, str) and detail.strip(): raise RuntimeError(detail)
-        response.raise_for_status(); result = response.json()
-        output = DATA / "training" / job_id; output.mkdir(parents=True, exist_ok=True)
-        artifact_data = result["artifact"]
-        filename = re.sub(r"[^A-Za-z0-9._-]+", "_", artifact_data.get("filename", "model.bin"))[:150] or "model.bin"
-        artifact = output / filename
-        artifact.write_bytes(base64.b64decode(artifact_data["content_base64"], validate=True))
-        run_id = _mlflow(job, result.get("metrics", {}), result.get("config", model_config))
+        ids = [row['id'] for row in db.execute("SELECT id FROM training_jobs WHERE status IN ('queued','running')")]
+    for job_id in ids:
         with database() as db:
-            completed_at = datetime.now(timezone.utc).isoformat()
-            db.execute("""UPDATE training_jobs SET status='succeeded',metrics=?,artifact_path=?,
-                mlflow_run_id=?,completed_at=? WHERE id=?""", (json.dumps(result.get("metrics", {})), str(artifact),
-                run_id, completed_at, job_id))
-            model_version = db.execute('''SELECT COALESCE(MAX(model_version),0)+1 FROM registered_models
-                WHERE project_id=? AND name=?''', (job["project_id"], job["base_model"])).fetchone()[0]
-            db.execute('''INSERT INTO registered_models
-                (id,project_id,training_job_id,name,model_version,mlflow_run_id,created_at)
-                VALUES (?,?,?,?,?,?,?)''', (uuid.uuid4().hex, job["project_id"], job_id, job["base_model"],
-                                           model_version, run_id, completed_at))
-    except Exception as exc:
-        with database() as db: db.execute("UPDATE training_jobs SET status='failed',error=?,completed_at=? WHERE id=?",
-            (str(exc)[:2000], datetime.now(timezone.utc).isoformat(), job_id))
+            record = db.execute('SELECT dataset_partition FROM training_jobs WHERE id=?', (job_id,)).fetchone()
+            if not json.loads(record['dataset_partition']):
+                db.execute("UPDATE training_jobs SET status='failed',phase='interrupted',error=?,completed_at=? WHERE id=?",
+                    ('Legacy job interrupted by Studio restart; retry to use durable agent jobs.', datetime.now(timezone.utc).isoformat(), job_id))
+                continue
+        start_job(job_id)
+
+
+def _persist_progress(job_id, value):
+    with database() as db:
+        db.execute("""UPDATE training_jobs SET status='running',phase=?,heartbeat_at=?,logs=?,metrics=?,latest_metric=?,
+            started_at=COALESCE(started_at,?),error='' WHERE id=? AND status IN ('queued','running')""",
+            (value.get('phase', 'training'), value.get('heartbeat_at'), json.dumps(value.get('logs', [])),
+             json.dumps(value.get('metrics', {})), json.dumps(value.get('latest_metric') or {}), value.get('started_at'), job_id))
+
+
+def _finish(job, result, model_config):
+    job_id = job['id']
+    output = DATA / 'training' / job_id; output.mkdir(parents=True, exist_ok=True)
+    artifact_data = result['artifact']
+    filename = re.sub(r'[^A-Za-z0-9._-]+', '_', artifact_data.get('filename', 'model.bin'))[:150] or 'model.bin'
+    artifact = output / filename
+    artifact.write_bytes(base64.b64decode(artifact_data['content_base64'], validate=True))
+    config = result.get('config', model_config)
+    metrics = result.get('metrics', {})
+    key = 'validation_loss' if 'validation_loss' in metrics else next(iter(metrics), None)
+    latest = {'name': key, 'value': metrics[key]} if key else {}
+    run_id = _mlflow(job, result.get('metrics', {}), config)
+    with database() as db:
+        completed = datetime.now(timezone.utc).isoformat()
+        logs = json.loads(db.execute('SELECT logs FROM training_jobs WHERE id=?', (job_id,)).fetchone()['logs'])
+        logs.append({'time': completed, 'message': 'Model saved' if run_id else 'Model saved; MLflow tracking is unavailable'})
+        changed = db.execute("""UPDATE training_jobs SET status='succeeded',phase='completed',metrics=?,artifact_path=?,
+            mlflow_run_id=?,completed_at=?,effective_config=?,logs=?,latest_metric=?,error='' WHERE id=? AND status!='succeeded'""",
+            (json.dumps(result.get('metrics', {})), str(artifact), run_id, completed, json.dumps(config), json.dumps(logs[-200:]), json.dumps(latest), job_id))
+        if not changed.rowcount: return
+        model_version = db.execute('SELECT COALESCE(MAX(model_version),0)+1 FROM registered_models WHERE project_id=? AND name=?',
+                                   (job['project_id'], job['base_model'])).fetchone()[0]
+        db.execute("""INSERT INTO registered_models (id,project_id,training_job_id,name,model_version,mlflow_run_id,created_at)
+            VALUES (?,?,?,?,?,?,?)""", (uuid.uuid4().hex, job['project_id'], job_id, job['base_model'], model_version, run_id, completed))
+
+
+def _run(job_id):
+    with database() as db:
+        job = dict(db.execute('SELECT * FROM training_jobs WHERE id=?', (job_id,)).fetchone())
+    try:
+        target = json.loads(job['compute_target']); agent = _agent_url(target)
+        while True:
+            try: caps = _capabilities(agent); break
+            except HTTPException as error:
+                with database() as db: db.execute("UPDATE training_jobs SET phase='reconnecting',error=? WHERE id=?", (str(error.detail)[:2000], job_id))
+                time.sleep(5)
+        selected = json.loads(job['dataset_partition'])
+        detail, archive = _archive(job['project_id'], job['version_id'], selected.get('train'))
+        hyperparameters = json.loads(job['hyperparameters'])
+        model_config = {'dataset_path': '/workspace/dataset.zip', 'output_path': f'/workspace/outputs/{job_id}',
+            'mlflow_url': MLFLOW_URL, 'project_id': job['project_id'], 'dataset_version_id': job['version_id'],
+            'class_names': [item['name'] for item in detail['snapshot']['project']['classes']],
+            'devices': [key for key in ('cpu', 'gpu') if target.get(key)], **hyperparameters}
+        manifest = {'job_id': job_id, 'annotation_type': job['task_type'], 'base_model': job['base_model'],
+            'run_name': job['run_name'] or job_id, 'hyperparameters': hyperparameters, 'config': model_config,
+            'devices': model_config['devices'], 'dataset_name': detail['name']}
+        if caps.get('async_jobs'):
+            while True:
+                try:
+                    response = httpx.get(f'{agent}/api/v1/jobs/{job_id}', timeout=10)
+                    if response.status_code == 404:
+                        response = httpx.post(f'{agent}/api/v1/jobs', data={'manifest': json.dumps(manifest)},
+                            files={'dataset': (f"{detail['name']}.zip", archive, 'application/zip')}, timeout=120)
+                    response.raise_for_status(); break
+                except httpx.HTTPStatusError:
+                    raise
+                except httpx.RequestError:
+                    time.sleep(2)  # Retry by ID: a lost acceptance response must not duplicate training.
+            while True:
+                try:
+                    response = httpx.get(f'{agent}/api/v1/jobs/{job_id}', timeout=10)
+                    response.raise_for_status(); value = response.json()
+                    _persist_progress(job_id, value)
+                    if value['status'] == 'failed': raise RuntimeError(value.get('error') or 'Agent job failed')
+                    if value['status'] == 'succeeded':
+                        response = httpx.get(f'{agent}/api/v1/jobs/{job_id}/result', timeout=120)
+                        response.raise_for_status(); result = response.json(); break
+                except httpx.HTTPError as error:
+                    # A transient disconnect does not cancel compute or change the run's outcome.
+                    with database() as db: db.execute("UPDATE training_jobs SET phase='reconnecting',error=? WHERE id=?",
+                        (f'Waiting for agent: {error}'[:2000], job_id))
+                time.sleep(2)
+        else:
+            # Compatibility with agents predating the asynchronous job protocol.
+            with database() as db: db.execute("UPDATE training_jobs SET status='running',phase='training',started_at=? WHERE id=?",
+                (datetime.now(timezone.utc).isoformat(), job_id))
+            response = httpx.post(f'{agent}/api/v1/train', data={'manifest': json.dumps(manifest)},
+                files={'dataset': (f"{detail['name']}.zip", archive, 'application/zip')}, timeout=3600)
+            if response.is_error:
+                try: message = response.json().get('detail')
+                except ValueError: message = None
+                if isinstance(message, str): raise RuntimeError(message)
+            response.raise_for_status(); result = response.json()
+        _finish(job, result, model_config)
+    except Exception as error:
+        with database() as db: db.execute("UPDATE training_jobs SET status='failed',phase='failed',error=?,completed_at=? WHERE id=?",
+            (str(error)[:2000], datetime.now(timezone.utc).isoformat(), job_id))
+    finally:
+        with _running_lock: _running.discard(job_id)
 
 
 def _job(row):
     item = dict(row); item["hyperparameters"] = json.loads(item["hyperparameters"])
     item["compute_target"] = json.loads(item["compute_target"]); item["metrics"] = json.loads(item["metrics"])
+    item["logs"] = json.loads(item["logs"]); item["latest_metric"] = json.loads(item["latest_metric"])
+    item["dataset_partition"] = json.loads(item["dataset_partition"]); item["effective_config"] = json.loads(item["effective_config"])
     item["artifact_available"] = bool(item.pop("artifact_path"))
     if item["mlflow_run_id"]:
         experiment_id, run_id = (item["mlflow_run_id"].split(":", 1)
@@ -206,6 +308,8 @@ def create_job(project_id: str, payload: JobCreate):
         if project["annotation_type"] == "anomaly_detection" and not any(
                 image.get("split") == "train" for image in json.loads(version["snapshot"])["images"]):
             raise HTTPException(422, "Published anomaly version has no training images. Increase the train split and publish a new version.")
+        partitions = partition(json.loads(version["snapshot"]))
+        if not partitions["train"]: raise HTTPException(422, "Published dataset has no training images. Increase the train split and publish a new version.")
         installed = {item["key"] for item in caps.get("models", {}).get(project["annotation_type"], [])}
         installed.update(item["key"] for item in caps.get("workbenches", [])
                          if item.get("available") and item.get("task") == project["annotation_type"])
@@ -220,16 +324,19 @@ def create_job(project_id: str, payload: JobCreate):
             number += 1
             run_name = f"{prefix}{number}"
         db.execute("""INSERT INTO training_jobs (id,project_id,version_id,task_type,base_model,hyperparameters,
-            compute_target,run_name,tensorboard_url,status) VALUES (?,?,?,?,?,?,?,?,?,'queued')""", (job_id, project_id, payload.version_id,
-            project["annotation_type"], payload.base_model, json.dumps(payload.hyperparameters), json.dumps(target), run_name, caps.get("tensorboard", {}).get("url", "") if caps.get("tensorboard", {}).get("available") else ""))
+            compute_target,run_name,tensorboard_url,dataset_partition,status) VALUES (?,?,?,?,?,?,?,?,?,?,'queued')""", (job_id, project_id, payload.version_id,
+            project["annotation_type"], payload.base_model, json.dumps(payload.hyperparameters), json.dumps(target), run_name, caps.get("tensorboard", {}).get("url", "") if caps.get("tensorboard", {}).get("available") else "", json.dumps(partitions)))
         row = db.execute("SELECT * FROM training_jobs WHERE id=?", (job_id,)).fetchone()
-    threading.Thread(target=_run, args=(job_id,), daemon=True).start()
+    with database() as db:
+        db.execute('UPDATE training_jobs SET logs=? WHERE id=?', (json.dumps([{'time': datetime.now(timezone.utc).isoformat(), 'message': 'Queued; training continues independently of this page'}]), job_id))
+        row = db.execute('SELECT * FROM training_jobs WHERE id=?', (job_id,)).fetchone()
+    start_job(job_id)
     return _job(row)
 
 
 @router.get("/api/projects/{project_id}/training/jobs/{job_id}/artifact")
 def artifact(project_id: str, job_id: str):
-    with database() as db: row = db.execute("SELECT artifact_path FROM training_jobs WHERE id=? AND project_id=?", (job_id, project_id)).fetchone()
+    with database() as db: row = db.execute("SELECT artifact_path,run_name FROM training_jobs WHERE id=? AND project_id=?", (job_id, project_id)).fetchone()
     if not row or not row["artifact_path"] or not Path(row["artifact_path"]).is_file(): raise HTTPException(404, "Model artifact is unavailable")
     path = Path(row["artifact_path"])
-    return FileResponse(path, filename=f"{job_id[:8]}-{path.name}")
+    return FileResponse(path, filename=f"{row['run_name'] or job_id}-{path.name}")

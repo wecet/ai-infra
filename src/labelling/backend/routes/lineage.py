@@ -79,8 +79,7 @@ def project_lineage(project_id: str):
         node_id = f"model:{row['id']}"
         nodes.append({"id": node_id, "type": "model", "title": row["name"],
                       "subtitle": f"Registered model v{row['model_version']}", "created_at": row["created_at"],
-                      "target": {"kind": "external", "url": _mlflow_url(row["mlflow_run_id"])}
-                                if row["mlflow_run_id"] else {"kind": "training"}})
+                      "target": {"kind": "model", "id": row["id"]}})
         edges.append({"from": f"training:{row['training_job_id']}", "to": node_id})
     for row in deployments:
         node_id = f"deployment:{row['id']}"

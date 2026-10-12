@@ -9,16 +9,18 @@ from fastapi.staticfiles import StaticFiles
 import ai_labelling
 import common
 from common import *  # Re-export stable helpers used by tests and local tooling.
-from routes import comparison, datasets, images, lineage, projects, training, versions
+from routes import comparison, datasets, images, lineage, projects, training, versions, models
 
 
 @asynccontextmanager
 async def lifespan(application):
     # DATA remains an intentionally supported override for isolated tests.
     common.DATA = DATA
-    for module in (comparison, datasets, images, lineage, projects, training, versions):
+    for module in (comparison, datasets, images, lineage, projects, training, versions, models):
         module.DATA = DATA
     init_db()
+    training.resume_jobs()
+    models.resume_evaluations()
     yield
 
 
@@ -31,7 +33,7 @@ def health():
 
 
 for router in (projects.router, comparison.router, versions.router, images.router, datasets.router,
-               training.router, lineage.router):
+               training.router, lineage.router, models.router):
     app.include_router(router)
 
 

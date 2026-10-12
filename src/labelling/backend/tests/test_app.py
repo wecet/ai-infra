@@ -813,9 +813,9 @@ def test_anomaly_training_job_preserves_frozen_split_and_registers_model(client,
         with zipfile.ZipFile(io.BytesIO(files['dataset'][1])) as bundle:
             document = json.loads(bundle.read(next(name for name in bundle.namelist() if name.endswith('.json'))))
         assert sum(image['split'] == 'train' for image in document['images']) == 4
-        assert sum(image['split'] == 'test' for image in document['images']) == 1
+        assert sum(image['split'] == 'test' for image in document['images']) == 0  # Held-out data never enters fitting.
         return types.SimpleNamespace(is_error=False, raise_for_status=lambda: None, json=lambda: {
-            'metrics': {'train_samples': 4, 'test_samples': 1},
+            'metrics': {'train_samples': 4, 'test_samples': 0},
             'artifact': {'filename': 'model.json', 'content_base64': base64.b64encode(b'{}').decode()}})
     monkeypatch.setattr(training.httpx, 'post', compute)
     monkeypatch.setattr(training.threading, 'Thread', lambda target, args, daemon:
@@ -835,3 +835,69 @@ def test_anomaly_training_job_preserves_frozen_split_and_registers_model(client,
         'version_id': empty_train['id'], 'base_model': 'colour-distance-anomaly-v1'})
     assert rejected.status_code == 422 and 'no training images' in rejected.json()['detail']
     assert len(client.get(f'/api/projects/{pid}/training/jobs').json()) == 1
+
+
+def test_async_training_reattaches_and_excludes_held_out_images(client, monkeypatch):
+    import base64
+    import httpx
+    training = service.training
+    pid = project(client, 'Durable training')
+    for index in range(5):
+        image = upload(client, pid, f'{index}.png', (20 + index, 20))
+        assert save(client, pid, image, boxes=[]).status_code == 200
+    version = client.post(f'/api/projects/{pid}/publish').json()
+    monkeypatch.setattr(training, '_capabilities', lambda agent: {'async_jobs': True, 'models': {
+        'object_detection': [{'key': 'class-box-prior-v1'}]}, 'gpu': {'available': False}})
+    monkeypatch.setattr(training, '_mlflow', lambda *args: None)
+    monkeypatch.setattr(training, 'start_job', lambda job_id: None)
+    created = client.post(f'/api/projects/{pid}/training/jobs', json={'version_id': version['id'], 'base_model': 'class-box-prior-v1'}).json()
+    job_id = created['id']; held_out = created['dataset_partition']['test']
+    assert len(held_out) == 1 and len(created['dataset_partition']['train']) == 4
+    progress = {'status': 'succeeded', 'phase': 'saving', 'metrics': {'train_loss': 0.4},
+        'heartbeat_at': '2026-10-12T12:00:00Z', 'started_at': '2026-10-12T11:59:00Z',
+        'latest_metric': {'name': 'train_loss', 'value': 0.4},
+        'logs': [{'time': '2026-10-12T12:00:00Z', 'message': 'Epoch complete'}]}
+    def get(url, timeout):
+        payload = {'metrics': {'train_loss': 0.4}, 'artifact': {'filename': 'model.json',
+            'content_base64': base64.b64encode(b'{"priors":{}}').decode()}} if url.endswith('/result') else progress
+        return httpx.Response(200, json=payload, request=httpx.Request('GET', url))
+    monkeypatch.setattr(training.httpx, 'get', get)
+    monkeypatch.setattr(training.httpx, 'post', lambda *args, **kwargs: pytest.fail('Existing agent job must not be submitted twice'))
+    training._run(job_id)
+    job = client.get(f'/api/projects/{pid}/training/jobs').json()[0]
+    assert job['status'] == 'succeeded' and job['phase'] == 'completed'
+    assert job['logs'][0]['message'] == 'Epoch complete' and job['heartbeat_at']
+    assert job['dataset_partition']['test'] == held_out
+    _, train_archive = training._archive(pid, version['id'], job['dataset_partition']['train'])
+    _, test_archive = training._archive(pid, version['id'], held_out)
+    def ids(archive):
+        with zipfile.ZipFile(io.BytesIO(archive)) as bundle:
+            return {item['studio_image_id'] for item in json.loads(bundle.read(next(name for name in bundle.namelist() if name.endswith('.json'))))['images']}
+    assert ids(train_archive).isdisjoint(ids(test_archive)) and ids(test_archive) == set(held_out)
+    models = client.get(f'/api/projects/{pid}/models').json()
+    assert len(models) == 1 and models[0]['evaluation_available'] and models[0]['held_out_samples'] == 1
+    assert client.get(f"/api/projects/{pid}/models/{models[0]['id']}/evaluation").json()['status'] == 'not_started'
+
+    evaluation_service = service.models
+    monkeypatch.setattr(evaluation_service, 'start_evaluation', lambda evaluation_id: None)
+    model_id = models[0]['id']
+    accepted = client.post(f'/api/projects/{pid}/models/{model_id}/evaluation')
+    assert accepted.status_code == 202
+    evaluation_id = accepted.json()['id']
+    assert client.post(f'/api/projects/{pid}/models/{model_id}/evaluation').json()['id'] == evaluation_id
+    calls = []
+    def evaluation_get(url, timeout):
+        calls.append(url)
+        if len(calls) == 1: return httpx.Response(404, request=httpx.Request('GET', url))
+        payload = {'metrics': {'evaluated_samples': 1}, 'predictions': [], 'failure_examples': [], 'sample_count': 1} if url.endswith('/result') else {'status': 'succeeded'}
+        return httpx.Response(200, json=payload, request=httpx.Request('GET', url))
+    def evaluation_post(url, data, files, timeout):
+        assert url.endswith('/evaluations') and ids(files['dataset'][1]) == set(held_out)
+        return httpx.Response(202, json={'status': 'queued'}, request=httpx.Request('POST', url))
+    monkeypatch.setattr(training.httpx, 'get', evaluation_get)
+    monkeypatch.setattr(training.httpx, 'post', evaluation_post)
+    evaluation_service.run_evaluation(evaluation_id)
+    saved = client.get(f'/api/projects/{pid}/models/{model_id}/evaluation').json()
+    assert saved['status'] == 'succeeded' and saved['result']['held_out_image_ids'] == held_out
+    assert saved['result']['training_job_id'] == job_id
+    assert client.post(f'/api/projects/{pid}/models/{model_id}/evaluation').json()['id'] == evaluation_id
