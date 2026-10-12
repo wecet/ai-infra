@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { api } from "../api";
+import UnlabelledImages from "./UnlabelledImages";
 import Review from "./Review";
 import Settings from "./Settings";
 import History from "./History";
@@ -18,7 +19,9 @@ const sections = [
 ];
 
 function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
-  const [tab, setTab] = useState("annotate");
+  const anomaly = project.annotation_type === "anomaly_detection";
+  const projectSections = anomaly ? sections.filter((section) => section.label !== "Label").map((section) => section.label === "Dataset" ? { ...section, tabs: [["stats", "Dashboard"], ["images", "Images"], ...section.tabs.slice(1)] } : section) : sections;
+  const [tab, setTab] = useState(anomaly ? "stats" : "annotate");
   const [images, setImages] = useState([]);
   const [index, setIndex] = useState(0);
   const [locked, setLocked] = useState(false);
@@ -139,7 +142,7 @@ function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
     }
   }
   const current = images[index];
-  const activeSection = sections.find((section) => section.tabs.some(([id]) => id === tab)) || sections[0];
+  const activeSection = projectSections.find((section) => section.tabs.some(([id]) => id === tab)) || projectSections[0];
   function navigate(nextTab) {
     if (nextTab === "review") setReviewImages(null);
     setTab(nextTab);
@@ -150,9 +153,9 @@ function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
         <div>
           <h1>{project.name}</h1>
           <p className="muted">
-            {classification ? "Image classification" : "Object detection"} ·{" "}
+            {anomaly ? "Anomaly detection · Unsupervised" : classification ? "Image classification" : "Object detection"} ·{" "}
             {images.length} images <span className="separator">/</span>{" "}
-            {project.classes.length} classes
+            {anomaly ? "No labels required" : `${project.classes.length} classes`}
           </p>
         </div>
         <div className="import-actions">
@@ -190,17 +193,17 @@ function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
       </div>
       <nav className="project-navigation" aria-label="Project pages">
         <div className="tabs section-tabs">
-          {sections.map((section) => <button key={section.label} disabled={locked}
+          {projectSections.map((section) => <button key={section.label} disabled={locked}
             className={section === activeSection ? "selected" : ""}
             onClick={() => navigate(section.tabs[0][0])}>{section.label}</button>)}
-          <span>{images.filter((i) => i.completed).length} / {images.length} complete</span>
+          <span>{anomaly ? `${images.length} images ready` : `${images.filter((i) => i.completed).length} / ${images.length} complete`}</span>
         </div>
         {activeSection.tabs.length > 1 && <div className="project-subtabs" aria-label={`${activeSection.label} pages`}>
           {activeSection.tabs.map(([id, label]) => <button key={id} disabled={locked}
             className={tab === id ? "selected" : ""} onClick={() => navigate(id)}>{label}</button>)}
         </div>}
       </nav>
-      {!classification && tab === "annotate" && (
+      {!anomaly && !classification && tab === "annotate" && (
         <div className="notice ai-controls">
           <label className="checkbox-label">
             <input type="checkbox" checked={aiEnabled} disabled={locked || aiValidating}
@@ -234,7 +237,9 @@ function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
         </div>
       )}
       {tab === "stats" ? (
-        <Dashboard project={project} onPublished={() => setTab("versions")} />
+        <Dashboard project={project} onConfigure={() => setTab("settings")} onPublished={() => setTab("versions")} />
+      ) : tab === "images" ? (
+        <UnlabelledImages project={project} images={reviewImages || images} onDeleted={async (id) => { if (reviewImages) setReviewImages((list) => list.filter((image) => image.id !== id)); await refresh(); }} onClear={reviewImages ? () => setReviewImages(null) : null} />
       ) : tab === "settings" ? (
         <Settings project={project} onUpdated={onUpdated} />
       ) : tab === "versions" ? (
@@ -247,7 +252,7 @@ function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
         <VersionComparison project={project} />
       ) : tab === "history" ? (
         <History project={project} onRestored={() => refresh()}
-          onView={(list) => { setReviewImages(list); setTab("review"); }} />
+          onView={(list) => { setReviewImages(list); setTab(anomaly ? "images" : "review"); }} />
       ) : tab === "review" ? (
         <Review project={project} images={(reviewImages || images).filter((item) => item.completed)}
           filtered={!!reviewImages} onClear={() => setReviewImages(null)}

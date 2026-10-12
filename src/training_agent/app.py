@@ -11,8 +11,9 @@ import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from PIL import Image
-from ai_interfaces import BaseModelConfig, DatasetVersion, TrainingContext
+from PIL import Image, ImageStat
+from ai_interfaces import AnomalyModelConfig, BaseModelConfig, DatasetVersion, TrainingContext
+from pydantic import Field
 from workbenches import discover_workbenches, find_workbench, load_model
 
 RUNS_ROOT = Path(os.environ.get("TRAINING_RUNS_ROOT", "/tmp/training-runs"))
@@ -20,7 +21,17 @@ TENSORBOARD_URL = os.environ.get("TENSORBOARD_PUBLIC_URL", "")
 
 app = FastAPI(title="ai-infra compute agent")
 
+class AnomalyBaselineConfig(AnomalyModelConfig):
+    threshold_quantile: float = Field(default=0.95, gt=0, le=1,
+        description="Quantile of training anomaly scores used as the anomaly threshold.")
+
+
 MODELS = {
+    "anomaly_detection": [{
+        "key": "colour-distance-anomaly-v1", "name": "Colour distance anomaly baseline",
+        "description": "Unsupervised CPU baseline fitted only to the frozen training split; scores held-out images.",
+        "defaults": {"threshold_quantile": 0.95},
+    }],
     "image_classification": [{
         "key": "histogram-centroid-v1", "name": "Colour histogram centroid",
         "description": "Lightweight classification baseline for validating the training pipeline.",
@@ -36,7 +47,7 @@ MODELS = {
 for task_name, task_models in MODELS.items():
     for model in task_models:
         model.update({"task": task_name, "workspace": "Bundled", "available": True,
-                      "config_schema": BaseModelConfig.model_json_schema()})
+                      "config_schema": (AnomalyBaselineConfig if task_name == "anomaly_detection" else BaseModelConfig).model_json_schema()})
 
 
 def gpu_available():
@@ -79,6 +90,37 @@ def _classification(coco, root):
     return {"kind": "histogram-centroid-v1", "centroids": centroids}, {"classes_trained": float(len(centroids)), "samples": float(len(by_id))}
 
 
+def anomaly_feature(path):
+    with Image.open(path) as image:
+        return [value / 255 for value in ImageStat.Stat(image.convert("RGB").resize((32, 32))).mean]
+
+
+def anomaly_score(feature, centroid):
+    return sum((a - b) ** 2 for a, b in zip(feature, centroid)) ** 0.5
+
+
+def _anomaly(coco, root, config):
+    records = coco["images"]
+    if any(record.get("split") not in {"train", "test"} for record in records):
+        raise HTTPException(422, "Anomaly datasets require a frozen train/test split on every image")
+    features = [(record["split"], anomaly_feature(root / record["file_name"])) for record in records]
+    train_features = [feature for split, feature in features if split == "train"]
+    if not train_features:
+        raise HTTPException(422, "The published anomaly dataset has no training images")
+    centroid = [sum(values) / len(train_features) for values in zip(*train_features)]
+    train_scores = sorted(anomaly_score(feature, centroid) for feature in train_features)
+    import math
+    threshold = train_scores[max(0, math.ceil(len(train_scores) * config.threshold_quantile) - 1)]
+    test_scores = [anomaly_score(feature, centroid) for split, feature in features if split == "test"]
+    metrics = {"train_samples": float(len(train_features)), "test_samples": float(len(test_scores)),
+               "train_mean_anomaly_score": sum(train_scores) / len(train_scores), "anomaly_threshold": threshold}
+    if test_scores:
+        metrics.update(test_mean_anomaly_score=sum(test_scores) / len(test_scores),
+                       test_flagged_fraction=sum(score > threshold for score in test_scores) / len(test_scores))
+    return {"kind": "colour-distance-anomaly-v1", "feature": "mean RGB / 255 after 32x32 resize",
+            "centroid": centroid, "threshold": threshold, "score": "euclidean_distance", "anomaly_rule": "score > threshold"}, metrics
+
+
 def _detection(coco, root):
     sums, counts = {}, {}
     images = {item["id"]: item for item in coco["images"]}
@@ -103,7 +145,7 @@ def train(manifest: str = Form(...), dataset: UploadFile = File(...)):
     if "gpu" in config.get("devices", []) and not gpu_available(): raise HTTPException(409, "GPU is unavailable on this compute agent")
     try: model_class = load_model(workbench) if workbench else None
     except Exception as exc: raise HTTPException(500, f"Model could not be loaded: {type(exc).__name__}: {exc}") from exc
-    config_type = model_class.config_type if model_class else BaseModelConfig
+    config_type = model_class.config_type if model_class else (AnomalyBaselineConfig if task == "anomaly_detection" else BaseModelConfig)
     try: model_config = config_type.model_validate(config.get("config", {}))
     except Exception as exc: raise HTTPException(422, f"Invalid model configuration: {exc}") from exc
     job_id = config.get("job_id", uuid.uuid4().hex)
@@ -143,7 +185,7 @@ def train(manifest: str = Form(...), dataset: UploadFile = File(...)):
             artifact_path.unlink()
             metrics, summary = dict(result.metrics), result.summary
         else:
-            payload, metrics = (_classification(coco, work / "dataset") if task == "image_classification"
+            payload, metrics = (_anomaly(coco, work / "dataset", model_config) if task == "anomaly_detection" else _classification(coco, work / "dataset") if task == "image_classification"
                                 else _detection(coco, work / "dataset"))
             payload.update({"model": model_key, "configuration": model_config.model_dump(mode="json"),
                             "hyperparameters": config.get("hyperparameters", {}), "classes": coco.get("categories", [])})

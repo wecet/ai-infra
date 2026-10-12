@@ -15,7 +15,7 @@ function CreateProject({ onCancel, onCreated }) {
       onCreated(
         await api("/projects", {
           method: "POST",
-          body: JSON.stringify({ name, classes, annotation_type: annotationType }),
+          body: JSON.stringify({ name, classes: annotationType === "anomaly_detection" ? [] : classes, annotation_type: annotationType }),
         }),
       );
     } catch (e) {
@@ -30,10 +30,10 @@ function CreateProject({ onCancel, onCreated }) {
       <div className="eyebrow">NEW PROJECT</div>
       <h2 id="create-title">Set up your dataset</h2>
       <fieldset className="task-selection">
-        <legend>Annotation type — choose one</legend>
-        {[["object_detection", "Object detection"], ["image_classification", "Image classification"]].map(([value, label]) => (
+        <legend>Dataset type — choose one</legend>
+        {[["object_detection", "Object detection"], ["image_classification", "Image classification"], ["anomaly_detection", "Anomaly detection (unsupervised)"]].map(([value, label]) => (
           <label className="checkbox-label" key={value}>
-            <input type="checkbox" checked={annotationType === value} disabled={busy}
+            <input type="radio" name="dataset-type" checked={annotationType === value} disabled={busy}
               onChange={() => setAnnotationType(value)} />
             {label}
           </label>
@@ -50,6 +50,7 @@ function CreateProject({ onCancel, onCreated }) {
           placeholder="e.g. Warehouse object detection"
         />
       </label>
+      {annotationType !== "anomaly_detection" && <>
       <label>
         Classes <span className="muted">— one name per class</span>
       </label>
@@ -88,6 +89,8 @@ function CreateProject({ onCancel, onCreated }) {
       >
         ＋ Add class
       </button>
+      </>}
+      {annotationType === "anomaly_detection" && <p className="muted">Import unlabelled images, set a train/test split, then publish and train. No classes or annotation steps are required.</p>}
       {error && (
         <p className="alert" role="alert">
           {error}

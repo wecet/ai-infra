@@ -57,8 +57,8 @@ def _manifest(directory):
         if result.returncode: raise ValueError((result.stderr.strip().splitlines() or ["inspection failed"])[-1])
         inspected = json.loads(result.stdout)
         descriptor = inspected["descriptor"]
-        if descriptor.get("task") not in {"image_classification", "object_detection"}:
-            raise ValueError("descriptor task must be image_classification or object_detection")
+        if descriptor.get("task") not in {"image_classification", "object_detection", "anomaly_detection"}:
+            raise ValueError("descriptor task must be image_classification, object_detection, or anomaly_detection")
         identity = hashlib.sha256(str(directory.resolve()).encode()).hexdigest()[:12]
         key = f"workspace:{identity}:{descriptor['key']}"
         return {**descriptor, "key": key, "workspace": directory.name, "path": str(directory),

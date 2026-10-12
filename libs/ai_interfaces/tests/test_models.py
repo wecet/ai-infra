@@ -51,3 +51,13 @@ def test_unknown_config_is_rejected():
 def test_incomplete_implementation_is_abstract():
     with pytest.raises(TypeError):
         ImageClassificationModel(valid_config())
+
+
+def test_anomaly_config_requires_no_labels_without_weakening_supervised_config():
+    from ai_interfaces import AnomalyModelConfig
+    values = valid_config(); values.pop('class_names')
+    assert AnomalyModelConfig(**values).class_names == ()
+    with pytest.raises(ValidationError):
+        AnomalyModelConfig(**values, class_names=['normal'])
+    with pytest.raises(ValidationError):
+        BaseModelConfig(**values, class_names=[])

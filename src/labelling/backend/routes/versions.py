@@ -13,7 +13,8 @@ def publish_version(project_id: str, request: Request):
         rows = db.execute('''SELECT * FROM images WHERE project_id=? AND completed=1
             ORDER BY source_path,id''', (project_id,)).fetchall()
         if not rows:
-            raise HTTPException(422, 'Complete at least one annotation before publishing')
+            raise HTTPException(422, 'Import at least one image before publishing' if project['annotation_type'] == 'anomaly_detection'
+                                else 'Complete at least one annotation before publishing')
         number = db.execute('SELECT COALESCE(MAX(version_number),0)+1 FROM dataset_versions WHERE project_id=?',
                             (project_id,)).fetchone()[0]
         name = f'v{number}-{datetime.now(timezone.utc).strftime("%y%m%d")}-ready'
@@ -22,6 +23,13 @@ def publish_version(project_id: str, request: Request):
         snapshot = {'project': {key: project[key] for key in ('name', 'annotation_type', 'classes', 'description',
                     'labelling_instructions', 'ai_instructions', 'export_train_percent')},
                     'images': [image_json(row) | {'stored_name': row['stored_name']} for row in rows]}
+        if project['annotation_type'] == 'anomaly_detection':
+            shuffled = list(rows)
+            random.Random(42).shuffle(shuffled)
+            cut = math.floor(len(rows) * project['export_train_percent'] / 100 + 0.5)
+            train_ids = {row['id'] for row in shuffled[:cut]}
+            for image in snapshot['images']:
+                image['split'] = 'train' if image['id'] in train_ids else 'test'
         try:
             directory.mkdir(parents=True)
             for row in rows:
@@ -64,6 +72,10 @@ def _version_content(project_id, version_id, detail):
              'date_created': detail['created_at'], 'images_annotated': len(snapshot['images'])},
             'licenses': [], 'images': [], 'annotations': [],
             'categories': [category | {'supercategory': ''} for category in project['classes']]}
+    if project['annotation_type'] == 'anomaly_detection':
+        coco['info'].update(train_percent=project['export_train_percent'], split_seed=42,
+                            train_samples=sum(item['split'] == 'train' for item in snapshot['images']),
+                            test_samples=sum(item['split'] == 'test' for item in snapshot['images']))
     objects = []
     for item in snapshot['images']:
         image_id = len(coco['images']) + 1
@@ -71,6 +83,8 @@ def _version_content(project_id, version_id, detail):
                   'width': item['width'], 'height': item['height'], 'source_path': item['source_path']}
         if project['annotation_type'] == 'image_classification':
             record['category_ids'] = item['labels']
+        if project['annotation_type'] == 'anomaly_detection':
+            record['split'] = item['split']
         coco['images'].append(record)
         path = DATA / 'versions' / project_id / version_id / item['stored_name']
         if not path.is_file():

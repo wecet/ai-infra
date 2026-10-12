@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { api, color } from "../api";
 
 function Settings({ project, onUpdated }) {
+  const anomaly = project.annotation_type === "anomaly_detection";
   const [form, setForm] = useState({ name: project.name, description: project.description || "",
     labelling_instructions: project.labelling_instructions || "", ai_instructions: project.ai_instructions || "",
     export_train_percent: project.export_train_percent ?? 80 });
@@ -36,14 +37,14 @@ function Settings({ project, onUpdated }) {
     catch (e) { setMessage(e.message); } finally { setClassBusy(false); }
   }
   return <form className="panel settings-form" onSubmit={submit}><div><h2>Project settings</h2>
-    <p className="muted">Guidance is shared with labellers. AI guidance is also included in automatic suggestions.</p></div>
+    <p className="muted">{anomaly ? "Set dataset details and the split frozen into future published versions." : "Guidance is shared with labellers. AI guidance is also included in automatic suggestions."}</p></div>
     <label>Project name<input required maxLength="150" {...field("name")} /></label>
     <label>Description<textarea rows="3" maxLength="2000" placeholder="Purpose, source, and scope of this dataset." {...field("description")} /></label>
-    <label>Labelling instructions<textarea rows="5" maxLength="4000" placeholder="Rules labellers should follow." {...field("labelling_instructions")} /></label>
+    {!anomaly && <label>Labelling instructions<textarea rows="5" maxLength="4000" placeholder="Rules labellers should follow." {...field("labelling_instructions")} /></label>}
     {project.annotation_type === "object_detection" && <label>AI instructions<textarea rows="5" maxLength="4000"
       placeholder="Project-specific criteria for AI-generated boxes." {...field("ai_instructions")} /></label>}
     <label>Default train split (%)<input type="number" min="0" max="100" {...field("export_train_percent")} /></label>
-    <section className="class-management"><div><h3>Classes</h3><p className="muted">Rename, recolour, archive, or merge classes. Existing annotations follow merged classes.</p></div>
+    {!anomaly && <section className="class-management"><div><h3>Classes</h3><p className="muted">Rename, recolour, archive, or merge classes. Existing annotations follow merged classes.</p></div>
       {project.classes.map((item) => <div className={`managed-class ${item.archived ? "archived" : ""}`} key={item.id}>
         <input type="color" aria-label={`${item.name} colour`} value={item.color || color(item.id)} disabled={classBusy}
           onChange={(e) => updateCategory(item, { color: e.target.value })} />
@@ -59,7 +60,7 @@ function Settings({ project, onUpdated }) {
         onChange={(e) => setNewColor(e.target.value)} /><input placeholder="New class name" maxLength="100" value={newClass}
         onChange={(e) => setNewClass(e.target.value)} /><button type="button" className="primary" disabled={classBusy || !newClass.trim()}
         onClick={addCategory}>Add class</button></div>
-    </section>
+    </section>}
     {message && <div className={message.endsWith("saved.") ? "notice" : "alert"}>{message}</div>}
     <div className="actions"><button className="primary" disabled={saving}>{saving ? "Saving…" : "Save settings"}</button></div>
   </form>;

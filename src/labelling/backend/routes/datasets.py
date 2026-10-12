@@ -70,6 +70,8 @@ def import_annotations(project_id: str, file: UploadFile = File(...)):
             for document_name, document in documents:
                 if not isinstance(document, dict) or 'images' not in document:
                     continue
+                if project['annotation_type'] == 'anomaly_detection' and (document.get('annotations') or document.get('categories') or any(item.get('category_ids') for item in document['images'])):
+                    raise HTTPException(422, 'Anomaly datasets must be unlabelled')
                 category_names = {c['id']: c.get('name', '') for c in document.get('categories', [])}
                 target_by_name = {c['name'].casefold(): c['id'] for c in project['classes']}
                 category_map = {source: target_by_name.get(name.casefold()) for source, name in category_names.items()}
@@ -151,7 +153,8 @@ def import_annotations(project_id: str, file: UploadFile = File(...)):
             validated.append((image_id, payload))
         for image_id, payload in validated:
             # Validate through the ordinary save route while retaining optimistic revisions.
-            save_annotations(project_id, image_id, payload)
+            if project['annotation_type'] != 'anomaly_detection':
+                save_annotations(project_id, image_id, payload)
         return {'updated': len(updates), 'images_imported': images_imported,
                 'unmatched': sorted(set(unmatched))[:100]}
 
@@ -243,7 +246,7 @@ def quality(project_id: str):
         if not row['completed']:
             continue
         labels, boxes = json.loads(row['labels']), json.loads(row['boxes'])
-        if not labels and not boxes:
+        if not labels and not boxes and project['annotation_type'] != 'anomaly_detection':
             missing_labels += 1
         for category_id in labels:
             counts[category_id] = counts.get(category_id, 0) + 1
@@ -258,6 +261,8 @@ def quality(project_id: str):
                 invalid_boxes += 1
     duplicate_result = duplicate_groups(project_id)
     shuffled = [row for row in rows if row['completed']]
+    if project['annotation_type'] == 'anomaly_detection':
+        shuffled.sort(key=lambda row: (row['source_path'], row['id']))
     random.Random(42).shuffle(shuffled)
     cut = math.floor(len(shuffled) * project['export_train_percent'] / 100 + .5)
     train_ids = {row['id'] for row in shuffled[:cut]}
@@ -288,7 +293,7 @@ def quality(project_id: str):
           'Near-duplicate images can overweight scenes during training.', duplicate_result['similar_images'])
     issue('cross_split_duplicates', 'Similar images cross the default split',
           'Related image groups appear in both train and test with the saved export split.', cross_split, 'error')
-    return {'issues': issues, 'checks_run': 7, 'cross_split_groups': cross_split}
+    return {'issues': issues, 'checks_run': 2 if project['annotation_type'] == 'anomaly_detection' else 7, 'cross_split_groups': cross_split}
 
 
 @router.post('/api/projects/{project_id}/export')
@@ -298,6 +303,8 @@ def export_project(project_id: str, payload: ExportRequest):
         rows = db.execute('SELECT * FROM images WHERE project_id=? AND completed=1 ORDER BY id', (project_id,)).fetchall()
     if not rows:
         raise HTTPException(422, 'Mark at least one image complete before exporting')
+    if project['annotation_type'] == 'anomaly_detection':
+        rows.sort(key=lambda row: (row['source_path'], row['id']))
     random.Random(42).shuffle(rows)
     cut = math.floor(len(rows) * payload.train_percent / 100 + 0.5)
     subset = rows[:cut] if payload.split == 'train' else rows[cut:]

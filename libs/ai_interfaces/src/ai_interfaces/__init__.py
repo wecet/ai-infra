@@ -1,5 +1,7 @@
 """Public, framework-neutral contracts for ai-infra model packages."""
 from .models import (
+    AnomalyModelConfig,
+    AnomalyDetectionModel,
     BaseModelConfig,
     BaseVisionModel,
     DatasetVersion,

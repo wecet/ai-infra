@@ -141,3 +141,62 @@ def test_trainer_failure_returns_details_and_agent_remains_usable(tmp_path, monk
     manifest["base_model"] = "histogram-centroid-v1"
     assert client.post("/api/v1/train", data={"manifest": json.dumps(manifest)},
                        files={"dataset": ("dataset.zip", dataset_zip(), "application/zip")}).status_code == 200
+
+
+def test_anomaly_training_uses_only_frozen_training_images():
+    import base64
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, 'w') as bundle:
+        records = []
+        for index, (split, colour) in enumerate([('train', (255, 0, 0)), ('test', (0, 0, 255))]):
+            image = io.BytesIO(); Image.new('RGB', (8, 8), colour).save(image, 'PNG')
+            path = f'images/{index}.png'; bundle.writestr(path, image.getvalue())
+            records.append({'id': index, 'file_name': path, 'split': split, 'width': 8, 'height': 8})
+        bundle.writestr('annotations/dataset.json', json.dumps({'images': records, 'categories': [], 'annotations': []}))
+    manifest = {'annotation_type': 'anomaly_detection', 'base_model': 'colour-distance-anomaly-v1',
+        'devices': ['cpu'], 'config': {'dataset_path': '/data/dataset.zip', 'output_path': '/output',
+            'project_id': 'p', 'dataset_version_id': 'v', 'class_names': []}}
+    client = TestClient(app.app)
+    assert client.get('/api/v1/capabilities').json()['models']['anomaly_detection'][0]['available']
+    response = client.post('/api/v1/train', data={'manifest': json.dumps(manifest)},
+        files={'dataset': ('dataset.zip', archive.getvalue(), 'application/zip')})
+    assert response.status_code == 200, response.text
+    result = response.json()
+    artifact = json.loads(base64.b64decode(result['artifact']['content_base64']))
+    assert artifact['centroid'] == [1, 0, 0]  # Blue held-out image cannot influence fitting.
+    assert result['metrics']['train_samples'] == result['metrics']['test_samples'] == 1
+    assert result['metrics']['test_flagged_fraction'] == 1
+    assert artifact['configuration']['class_names'] == []
+    with zipfile.ZipFile(io.BytesIO(archive.getvalue())) as original:
+        no_train = io.BytesIO()
+        with zipfile.ZipFile(no_train, 'w') as bundle:
+            for name in original.namelist():
+                content = original.read(name)
+                if name.endswith('.json'):
+                    document = json.loads(content)
+                    for item in document['images']: item['split'] = 'test'
+                    content = json.dumps(document).encode()
+                bundle.writestr(name, content)
+    response = client.post('/api/v1/train', data={'manifest': json.dumps(manifest)},
+        files={'dataset': ('dataset.zip', no_train.getvalue(), 'application/zip')})
+    assert response.status_code == 422 and 'no training images' in response.json()['detail']
+
+
+def test_discovers_unsupervised_anomaly_workbench(tmp_path):
+    repository = tmp_path / 'anomaly-workbench'; repository.mkdir()
+    (repository / 'ai-workbench.json').write_text('{"entrypoint":"ai_workbench.py:MODEL_CLASS"}')
+    (repository / 'ai_workbench.py').write_text('''
+from ai_interfaces import AnomalyDetectionModel, AnomalyModelConfig, ModelDescriptor
+class Model(AnomalyDetectionModel):
+    config_type = AnomalyModelConfig
+    @classmethod
+    def descriptor(cls): return ModelDescriptor("anomaly", "Anomaly", "anomaly_detection", "Unsupervised")
+    def train(self, context): pass
+    def load(self, artifact): pass
+    def predict(self, image): return [{"anomaly_score": 0.0}]
+MODEL_CLASS = Model
+''')
+    found = discover_workbenches(tmp_path, refresh=True)
+    assert len(found) == 1 and found[0]['available'], found
+    assert found[0]['task'] == 'anomaly_detection'
+    assert found[0]['config_schema']['properties']['class_names']['default'] == []

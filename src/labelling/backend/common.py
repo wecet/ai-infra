@@ -176,8 +176,8 @@ def init_db():
 
 class ProjectCreate(BaseModel):
     name: str = Field(min_length=1, max_length=150)
-    classes: list[str] = Field(min_length=1)
-    annotation_type: Literal['object_detection', 'image_classification'] = 'object_detection'
+    classes: list[str] = Field(default_factory=list)
+    annotation_type: Literal['object_detection', 'image_classification', 'anomaly_detection'] = 'object_detection'
 
 
 class ProjectUpdate(BaseModel):

@@ -109,3 +109,13 @@ curl --fail http://localhost:8090/health
 Backend and frontend development instructions are in [src/labelling/README.md](src/labelling/README.md).
 
 See [LICENSE](LICENSE).
+
+## Unsupervised anomaly datasets
+
+Choose **Anomaly detection (unsupervised)** when creating a project. Import a folder or image files; there are no classes, annotation completion steps, AI labelling, or annotation reviews. Use **Dataset → Images** to inspect or remove samples (History supports restoration).
+
+Set **Default train split (%)** in Manage, then publish from Dashboard. Publishing freezes the image files and their deterministic train/test assignments (seed 42) so later settings or imports cannot alter that version. The version ZIP and lakeFS snapshot retain each image's `split` (`train` or `test`) in their JSON manifest. The manifest keeps the existing `annotations/*.json` and `images/` archive layout for compatibility, with empty categories and annotations. Live split exports remain available; they use the selected ratio, while published exports retain the frozen split. Empty exports are skipped.
+
+Train a published version using the bundled **Colour distance anomaly baseline**, or an installed `anomaly_detection` workbench. The baseline fits mean RGB features and a score threshold using only training images, then reports held-out anomaly scores and the flagged fraction. Its downloadable JSON artifact contains the centroid, threshold, feature recipe, and configuration. This is a pipeline demo, not a production anomaly detector. With unlabelled test data, the metrics do not claim detection accuracy. Prepare representative normal training data for normality-based models. A zero-sized training partition cannot be trained.
+
+Anomaly jobs use the existing local/remote compute, MLflow tracking, artifact download, model registration, and lineage flows. Custom implementations can use `AnomalyDetectionModel` and `AnomalyModelConfig` from `ai_interfaces` (empty `class_names`). Install these new contracts from this checkout with `pip install -e libs/ai_interfaces`; the existing published v0.2.1 release predates anomaly support. They must respect the frozen `split` on each manifest image; held-out test samples must not enter fitting or threshold calibration.

@@ -192,7 +192,7 @@ function App() {
         </label>
         <span className="workspace-summary">
           {project
-            ? `${project.classes.length} classes`
+            ? (project.annotation_type === "anomaly_detection" ? "Unsupervised" : `${project.classes.length} classes`)
             : `${projects.length} projects`}
         </span>
         <div className="workspace-actions">
@@ -292,21 +292,21 @@ function App() {
                 >
                   <div className="card-top">
                     <span className="project-type-icon" aria-hidden="true">
-                      {p.annotation_type === "image_classification" ? "▦" : "⌗"}
+                      {p.annotation_type === "anomaly_detection" ? "◌" : p.annotation_type === "image_classification" ? "▦" : "⌗"}
                     </span>
                     <span className="tag">
                       {p.total && p.completed === p.total
-                        ? "COMPLETE"
+                        ? (p.annotation_type === "anomaly_detection" ? "READY" : "COMPLETE")
                         : "IN PROGRESS"}
                     </span>
                   </div>
                   <div className="project-type-label">
-                    {p.annotation_type === "image_classification" ? "IMAGE CLASSIFICATION" : "OBJECT DETECTION"}
+                    {p.annotation_type === "anomaly_detection" ? "ANOMALY DETECTION" : p.annotation_type === "image_classification" ? "IMAGE CLASSIFICATION" : "OBJECT DETECTION"}
                   </div>
                   <h2>{p.name}</h2>
                   <p>
                     {p.total} images{" "}
-                    <span className="muted">· {p.completed} labelled</span>
+                    <span className="muted">· {p.completed} {p.annotation_type === "anomaly_detection" ? "ready" : "labelled"}</span>
                   </p>
                   <div className="progress-track">
                     <span
