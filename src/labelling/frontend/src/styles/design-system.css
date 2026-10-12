@@ -473,3 +473,20 @@ td { vertical-align: top; }
 .training-metrics dd { margin: 0; font-variant-numeric: tabular-nums; }
 .card-bottom span:last-child { color: var(--accent-ink); }
 input:not([type="checkbox"]):not([type="radio"]), textarea { font-weight: 400; }
+
+/* Shared semantic groups complement the studio's slate and coral palette. */
+.kpi-data, .metric-data { --metric-ink: #48576a; --metric-surface: #f3f5f7; --metric-border: #c9d1d9; }
+.kpi-complete { --metric-ink: #3f704d; --metric-surface: #f2f7f3; --metric-border: #bfd2c4; }
+.kpi-attention { --metric-ink: #8a612a; --metric-surface: #fbf6ee; --metric-border: #ddccae; }
+.metric-model { --metric-ink: var(--accent-ink); --metric-surface: var(--accent-soft); --metric-border: #e2b6a9; }
+.kpi { background: var(--metric-surface); border-color: var(--metric-border); }
+.kpi::before { background: var(--metric-ink); }
+.kpi strong { color: var(--metric-ink); }
+.kpi-button:disabled { opacity: 1; cursor: default; }
+[data-theme="dark"] :is(.kpi-data, .metric-data) { --metric-ink: #b5c3d3; --metric-surface: #2b3038; --metric-border: #48515e; }
+[data-theme="dark"] .kpi-complete { --metric-ink: #a6c9ae; --metric-surface: #2b352e; --metric-border: #4b6352; }
+[data-theme="dark"] .kpi-attention { --metric-ink: #dfbd86; --metric-surface: #373129; --metric-border: #6b5940; }
+[data-theme="dark"] .metric-model { --metric-border: #765247; }
+.kpi-button:not(:disabled):hover { background: var(--metric-surface); border-color: var(--metric-ink); }
+[data-theme="dark"] .kpi { background: var(--metric-surface); border-color: var(--metric-border); }
+[data-theme="dark"] .kpi strong { color: var(--metric-ink); }

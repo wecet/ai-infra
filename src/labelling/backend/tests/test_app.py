@@ -309,6 +309,9 @@ def test_version_comparison_and_end_to_end_lineage(client, monkeypatch):
     assert graph['counts'] == {'batches': 1, 'versions': 2, 'lakefs_commits': 1,
                                'training_runs': 1, 'registered_models': 1, 'deployments': 1}
     assert any(edge == {'from': 'training:job-1', 'to': 'model:model-1'} for edge in graph['edges'])
+    assert any(edge['from'].startswith('lakefs:') and edge['to'] == 'training:job-1'
+               and edge.get('kind') == 'snapshot' for edge in graph['edges'])
+    assert {'from': f"version:{version_two['id']}", 'to': 'training:job-1'} in graph['edges']
 
 
 def test_ai_classification_rejected_and_no_credentials(client, monkeypatch, tmp_path):

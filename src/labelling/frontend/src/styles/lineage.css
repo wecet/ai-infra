@@ -28,3 +28,24 @@
 .lineage-type-icon { width: 19px; height: 19px; flex-shrink: 0; }
 [data-theme="dark"] .lineage-lakefs { --lineage-type-color: #79c7dd; }
 .lineage-training.failed { border-inline-start-color: var(--danger); }
+
+.lineage-graph { overflow-x: auto; }
+.lineage-canvas { position: relative; min-width: 1150px; padding: 4px 38px 18px 38px; }
+.lineage-canvas .lineage-flow { overflow: visible; gap: 54px; margin-top: 42px; padding: 0; }
+.lineage-stage:not(:last-child)::after { content: none; }
+.lineage-stage-nodes { gap: 28px; }
+.lineage-root, .lineage-node { position: relative; z-index: 1; }
+.lineage-connectors { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.lineage-connection-line { fill: none; stroke: var(--muted); stroke-width: 1.8; }
+.lineage-connection.snapshot .lineage-connection-line { stroke-dasharray: 5 4; }
+.lineage-connection.active .lineage-connection-line { stroke: var(--accent-ink); stroke-width: 2.8; }
+.lineage-connection-hit { fill: none; stroke: transparent; stroke-width: 16; pointer-events: stroke; cursor: help; }
+.lineage-connection-hit:focus { outline: none; }
+.lineage-connection-tooltip { position: fixed; z-index: 100; max-width: 300px; padding: 9px 12px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--panel); color: inherit; box-shadow: var(--shadow-md); pointer-events: none; font-size: 12px; }
+
+.lineage-connection-head { fill: var(--muted); }
+.lineage-connection.active .lineage-connection-head { fill: var(--accent-ink); }
+
+.lineage-counts :is(.metric-data, .metric-model) { background: var(--metric-surface); border-color: var(--metric-border); border-inline-start: 4px solid var(--metric-ink); }
+.lineage-counts :is(.metric-data, .metric-model) strong { color: var(--metric-ink); }
+[data-theme="dark"] .lineage-counts :is(.metric-data, .metric-model) { background: var(--metric-surface); border-color: var(--metric-border); border-inline-start-color: var(--metric-ink); }

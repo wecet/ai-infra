@@ -158,8 +158,11 @@ function Dashboard({ project, onPublished }) {
               ["SIMILAR IMAGES", stats.similar_images, `${stats.similar_groups} groups · click to review`, true],
             ].map(([label, value, note, clickable]) => {
               const Component = clickable ? "button" : "div";
-              const tone = label === "LABELLED" || label === "APPROVED" ? "positive" :
-                label === "REMAINING" || label === "READY FOR REVIEW" || label === "SIMILAR IMAGES" ? "attention" : "neutral";
+              const tone = {
+                "TOTAL IMAGES": "data", "LABELLED": "complete", "REMAINING": "attention",
+                "READY FOR REVIEW": "attention", "APPROVED": "complete",
+                "IMAGE LABELS": "data", "BOUNDING BOXES": "data", "SIMILAR IMAGES": "attention",
+              }[label];
               return <Component className={`panel kpi kpi-${tone} ${clickable ? "kpi-button" : ""}`} key={label}
                 disabled={clickable && !value} onClick={clickable ? openDuplicates : undefined}>
                 <div className="eyebrow">{label}</div>

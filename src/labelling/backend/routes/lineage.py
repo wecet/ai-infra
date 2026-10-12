@@ -27,7 +27,7 @@ def project_lineage(project_id: str):
             WHERE project_id=? ORDER BY version_number''', (project_id,)).fetchall()
         commits = db.execute('''SELECT * FROM lakefs_commits WHERE project_id=? ORDER BY created_at,rowid''',
                              (project_id,)).fetchall()
-        jobs = db.execute('''SELECT id,version_id,base_model,status,mlflow_run_id,created_at,completed_at
+        jobs = db.execute('''SELECT id,version_id,base_model,run_name,status,mlflow_run_id,created_at,completed_at
             FROM training_jobs WHERE project_id=? ORDER BY created_at,rowid''', (project_id,)).fetchall()
         models = db.execute('''SELECT * FROM registered_models WHERE project_id=? ORDER BY created_at,rowid''',
                             (project_id,)).fetchall()
@@ -65,12 +65,16 @@ def project_lineage(project_id: str):
         edges.append({"from": f"version:{row['version_id']}", "to": node_id})
     for row in jobs:
         node_id = f"training:{row['id']}"
-        nodes.append({"id": node_id, "type": "training", "title": row["base_model"],
+        nodes.append({"id": node_id, "type": "training", "title": row["run_name"] or row["base_model"],
                       "subtitle": f"Training {row['status']}", "status": row["status"],
                       "created_at": row["created_at"],
                       "target": {"kind": "external", "url": _mlflow_url(row["mlflow_run_id"])}
                                 if row["mlflow_run_id"] else {"kind": "training", "id": row["id"]}})
         edges.append({"from": f"version:{row['version_id']}", "to": node_id})
+        # A commit is a mirror of the frozen version, not the trainer's input source.
+        for commit in commits:
+            if commit["version_id"] == row["version_id"]:
+                edges.append({"from": f"lakefs:{commit['id']}", "to": node_id, "kind": "snapshot"})
     for row in models:
         node_id = f"model:{row['id']}"
         nodes.append({"id": node_id, "type": "model", "title": row["name"],
