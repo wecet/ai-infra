@@ -37,6 +37,15 @@ class BaseModelConfig(BaseModel):
     validation_split: float = Field(default=0.2, ge=0, lt=1, description="Fraction of images held out for validation loss rather than optimizer updates. For example, 0.2 requests 20 percent; set to 0 to disable validation. Small datasets may limit the holdout size.")
 
 
+class AnomalyModelConfig(BaseModelConfig):
+    """Unsupervised vision configuration; no class labels are required."""
+
+    class_names: tuple[str, ...] = Field(default=(), max_length=0,
+        description="Anomaly detection is unsupervised and uses no class names.")
+    validation_split: float = Field(default=0, ge=0, le=0,
+        description="Use the train/test partitions frozen in the published anomaly dataset; no resplitting.")
+
+
 @dataclass(frozen=True)
 class ModelDescriptor:
     key: str
@@ -117,3 +126,7 @@ class ImageClassificationModel(BaseVisionModel[ConfigT], ABC):
 
 class ObjectDetectionModel(BaseVisionModel[ConfigT], ABC):
     """Required base class for object-detection implementations."""
+
+
+class AnomalyDetectionModel(BaseVisionModel[ConfigT], ABC):
+    """Unsupervised implementations return anomaly scores, optionally heatmaps."""
