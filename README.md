@@ -18,7 +18,7 @@ Use the [documentation index](docs/README.md) for current capabilities, operatin
 
 ## Quick start
 
-Docker with the Compose plugin is the only deployment prerequisite.
+Docker with the Compose plugin is the only deployment prerequisite. Set unique `AUTH_MYSQL_PASSWORD` and `AUTH_MYSQL_ROOT_PASSWORD` values in `.env` before starting the stack.
 
 ```bash
 cp .env.example .env
@@ -42,6 +42,10 @@ Open the services at:
 The labeller uses host port `8081` because `8080` was already occupied on the machine where this stack was configured. Change `LABELLING_PORT`, `LAKEFS_PORT`, or `MLFLOW_PORT` in `.env` if a port is unavailable, then recreate the services with `docker compose up -d`.
 
 lakeFS is initialized automatically from the `LAKEFS_*` values in `.env`. Log in with `LAKEFS_ACCESS_KEY_ID` and `LAKEFS_SECRET_ACCESS_KEY`. The `datasets` repository is created automatically the first time a labelling version is pushed. MLflow stores both its SQLite database and artifacts in a named volume. The bundled training agent always supports CPU; its GPU option is disabled unless it detects an exposed GPU runtime.
+
+## Users and repository access
+
+System owners manage users, roles, teams and password resets from **Users & teams** on the homepage. Projects are private repositories owned by their creator; their Manage page grants Read/Write access to users or teams and supports ownership transfer. See [Users and repository access](docs/users-and-repository-access.md) for setup and migration.
 
 ## Model training
 
@@ -106,7 +110,7 @@ The stack deliberately uses the historic `ai-infra_labelling_data` and `ai-infra
 
 Before migrating an existing installation, inspect and back up its volumes. Stop the old stack without `-v`, confirm the volume names in `.env`, and then start this Compose stack. Keep `LAKEFS_AUTH_ENCRYPT_SECRET_KEY` and the lakeFS credentials stable for an existing lakeFS volume.
 
-The services are intended for a trusted network: the labeller has no login and MLflow runs with its security middleware disabled. Add a secured reverse proxy or equivalent access control before public exposure.
+AI Studio now requires sign-in and enforces MySQL-backed users, teams and repository permissions. Complete [first-owner setup](docs/users-and-repository-access.md) after upgrading. MLflow, TensorBoard, lakeFS and compute-agent endpoints remain separate services; restrict their direct access and use HTTPS for shared deployments.
 
 ## Verification
 

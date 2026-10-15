@@ -16,3 +16,7 @@ Docker Compose loads the repository-root `.env`. The committed `.env.example` do
 Keep `.env` private. Preserve the lakeFS encryption key and credentials when reusing an existing lakeFS volume. Leave `OPENAI_API_KEY` empty when AI assistance is not required.
 
 Compute-agent runtime paths (`TRAINING_WORKSPACES_ROOT`, `TRAINING_RUNS_ROOT`) and service URLs are passed by Compose. Standalone/remote agents can set `TENSORBOARD_PUBLIC_URL` to their reachable dashboard URL. Persistent job files use `TRAINING_RUNS_ROOT/.jobs`; keep that storage across agent recreation.
+
+## Users and repository permissions
+
+`AUTH_MYSQL_DATABASE`, `AUTH_MYSQL_USER`, `AUTH_MYSQL_PASSWORD`, `AUTH_MYSQL_ROOT_PASSWORD`, `AUTH_MYSQL_VOLUME` and `AUTH_COOKIE_SECURE` configure the new MySQL identity service. Password values are required; use unique random values. Native backends also accept `AUTH_MYSQL_HOST` and `AUTH_MYSQL_PORT`. See [Users and repository access](users-and-repository-access.md) for defaults, secure cookies and initialization.

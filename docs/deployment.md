@@ -13,8 +13,10 @@ The `lakefs-init` one-shot service creates the lakeFS administrator from `.env` 
 
 Use `docker compose logs SERVICE` to diagnose startup and `docker compose down` to stop the stack without deleting volumes. Never add `-v` when data must be retained.
 
-For a remote host, copy the repository and a private `.env` to that host and run the same commands there. The labeller and MLflow have no application authentication, so do not publish their ports to an untrusted network without an authenticated proxy or firewall.
+For a remote host, copy the repository and a private `.env` to that host and run the same commands there. Studio requires sign-in; complete [first-owner setup](users-and-repository-access.md) and enable secure cookies behind HTTPS. MLflow, TensorBoard and agent endpoints need separate network/access controls.
 
 Training-agent and TensorBoard services are also part of the stack. Persistent agent jobs and event logs live in the training-runs volume. Upgrade Studio and training-agent together for asynchronous training and saved-model evaluation; remote agents must be upgraded independently. Agent execution is independent of browser requests. Restarting a compute agent interrupts in-process trainers and records a recoverable failure rather than resuming weights.
 
 See [Training jobs and evaluation](training-jobs-and-evaluation.md) and the [documentation index](README.md).
+
+MySQL now persists Studio identity/access data in `ai-infra_auth_mysql`. Set both `AUTH_MYSQL_PASSWORD` and `AUTH_MYSQL_ROOT_PASSWORD` before starting Compose. MySQL has no published host port. Upgrade instructions and first-owner setup are in [Users and repository access](users-and-repository-access.md).

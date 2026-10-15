@@ -6,6 +6,7 @@ The guides below describe the current checkout. Published container and interfac
 
 | Guide | Purpose |
 | --- | --- |
+| [Users and repository access](users-and-repository-access.md) | First-owner setup, MySQL identities, teams, roles and project grants |
 | [Platform overview](platform-overview.md) | Current capabilities, data flow, and known limits |
 | [Studio workflow](../src/labelling/README.md) | Projects, imports, labelling, anomaly datasets, versions, and training |
 | [Training jobs and evaluation](training-jobs-and-evaluation.md) | Background job ownership, progress, recovery and held-out model evaluation |

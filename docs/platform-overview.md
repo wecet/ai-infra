@@ -42,7 +42,7 @@ Anomaly version manifests freeze each image's `train` or `test` assignment. Supe
 - Saved models now expose held-out predictions, metrics and examples in a dialog. A broader inference playground, configurable metric policies and run-comparison dashboard remain future work.
 - Registered-model and deployment lineage records do not constitute a managed model-serving lifecycle with rollout and rollback controls.
 - The model contract and archive representation are vision-oriented. LLM/VLM and Language need suitable sample schemas and validation before their placeholders can become functional.
-- Application authentication and project roles are absent. The current deployment assumes a trusted network or an authenticated fronting proxy.
+- Studio has MySQL-backed accounts, teams and repository Read/Write/Owner access. Other storage/tracking/compute services require separate access controls. See [identity setup](users-and-repository-access.md).
 - Documentation for released artifacts must distinguish a published release from newer source-checkout features, including anomaly model contracts.
 
 For operational details, use the [deployment](deployment.md) and [persistence](migration.md) guides. None of the limits above is a claim that the existing demo workflow cannot be used locally.
