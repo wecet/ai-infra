@@ -13,6 +13,7 @@ COPY backend/app.py ./
 COPY backend/ai_labelling.py ./
 COPY backend/lakefs_client.py ./
 COPY backend/common.py ./
+COPY backend/auth.py ./
 COPY backend/routes ./routes
 COPY --from=frontend /build/dist /app/static
 RUN mkdir /data

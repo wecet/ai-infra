@@ -117,7 +117,7 @@ def test_project_settings_review_workflow_and_quality(client):
                           headers={'x-forwarded-user': 'reviewer'},
                           json={'status': 'rejected', 'comment': 'Missing the component'})
     assert rejected.status_code == 200
-    assert rejected.json()['reviewed_by'] == 'reviewer'
+    assert rejected.json()['reviewed_by'] == 'admin'
     approved = client.put(f"/api/projects/{pid}/images/{image['id']}/review",
                           json={'status': 'approved'}).json()
     assert approved['review_status'] == 'approved'
@@ -214,7 +214,7 @@ def test_publish_is_immutable_and_bulk_review_approves_selection(client, monkeyp
     assert published.status_code == 201
     assert published.json()['name'].startswith('v1-') and published.json()['name'].endswith('-ready')
     version_id = published.json()['id']
-    assert client.get(f'/api/projects/{pid}/versions').json()[0]['author'] == 'publisher'
+    assert client.get(f'/api/projects/{pid}/versions').json()[0]['author'] == 'admin'
     before = client.get(f'/api/projects/{pid}/versions/{version_id}').json()
     assert before['sample_count'] == 2 and before['snapshot']['images'][0]['boxes']
     assert {item['source_path'] for item in before['snapshot']['images']} == {'first.png', 'second.png'}
@@ -238,7 +238,7 @@ def test_publish_is_immutable_and_bulk_review_approves_selection(client, monkeyp
                          headers={'x-forwarded-preferred-username': 'owen'})
     assert lakefs.status_code == 200 and lakefs.json()['commit_id'] == 'abc123'
     assert pushed['message'].startswith(f"Saving {published.json()['name']} at ")
-    assert pushed['message'].endswith(' by owen')
+    assert pushed['message'].endswith(' by admin')
     assert [path.split('/')[-2] for path, _, _ in pushed['objects']].count('images') == 2
     assert any(path.endswith('.json') and '/annotations/' in path for path, _, _ in pushed['objects'])
     assert save(client, pid, first, boxes=[]).status_code == 200
@@ -681,14 +681,14 @@ def test_import_project_zip_creates_repository_project_and_rolls_back_errors(cli
     assert len(client.get('/api/projects').json()) == before
 
 
-def test_project_comments_are_persistent_timestamped_and_use_forwarded_user(client):
+def test_project_comments_are_persistent_and_ignore_spoofed_forwarded_user(client):
     pid = project(client)
     assert client.get(f'/api/projects/{pid}/comments').json() == []
     assert client.post(f'/api/projects/{pid}/comments', json={'body': '   '}).status_code == 422
     first = client.post(f'/api/projects/{pid}/comments', json={'body': 'Initial upload complete.'},
                         headers={'x-forwarded-preferred-username': 'owen'})
     assert first.status_code == 201
-    assert first.json()['author'] == 'owen'
+    assert first.json()['author'] == 'admin'
     assert datetime.fromisoformat(first.json()['created_at'].replace('Z', '+00:00'))
     second = client.post(f'/api/projects/{pid}/comments', json={'body': 'Review started.'})
     assert second.status_code == 201 and second.json()['author'] == 'admin'

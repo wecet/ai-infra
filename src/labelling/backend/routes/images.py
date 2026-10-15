@@ -265,8 +265,7 @@ def review_annotation(project_id: str, image_id: str, payload: ReviewDecision, r
     comment = payload.comment.strip()
     if payload.status == 'rejected' and not comment:
         raise HTTPException(422, 'Add a reason when rejecting an annotation')
-    reviewer = (request.headers.get('x-forwarded-preferred-username') or
-                request.headers.get('x-forwarded-user') or 'admin').strip()[:150] or 'admin'
+    reviewer = request.state.user['username']
     with database() as db:
         if get_project(db, project_id)['annotation_type'] == 'anomaly_detection':
             raise HTTPException(422, 'Unsupervised anomaly images do not require annotation review')
@@ -283,8 +282,7 @@ def review_annotation(project_id: str, image_id: str, payload: ReviewDecision, r
 @router.put('/api/projects/{project_id}/review/bulk')
 def bulk_review(project_id: str, payload: BulkReview, request: Request):
     image_ids = list(dict.fromkeys(payload.image_ids))
-    reviewer = (request.headers.get('x-forwarded-preferred-username') or
-                request.headers.get('x-forwarded-user') or 'admin').strip()[:150] or 'admin'
+    reviewer = request.state.user['username']
     with database() as db:
         if get_project(db, project_id)['annotation_type'] == 'anomaly_detection':
             raise HTTPException(422, 'Unsupervised anomaly images do not require annotation review')
