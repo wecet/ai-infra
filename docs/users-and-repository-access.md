@@ -11,13 +11,9 @@ docker compose up -d mysql
 docker compose up -d --no-deps --build labelling
 ```
 
-On a fresh identity database, Studio generates a random, owner-only setup-token file. Read it locally:
+On a fresh identity database, Studio creates the first system owner with username **admin** and password **admin**. Sign in at Studio, then choose a new password of at least 12 characters before accessing repositories or administration. There is no public self-registration.
 
-```bash
-docker compose exec labelling cat /data/owner-setup-token
-```
-
-Open Studio and enter that token on **Create the first owner**, together with your username, display name and chosen password (at least 12 characters). The first owner is created once; the setup token is removed. Sign in with the credentials you chose. There is no default password and no public self-registration.
+This account is initialized only when the users table is empty. Restarting or upgrading never resets existing credentials or recreates the default account. No setup token is required.
 
 On upgrade, existing projects are assigned to this first owner. New projects and imported ZIP repositories belong to their creator. Subsequent startups reconcile any dataset records missing an identity record to the earliest active system owner; retain both databases when backing up or restoring.
 

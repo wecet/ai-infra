@@ -93,18 +93,22 @@ def init_auth():
     with database() as db:
         for statement in statements: db.execute(statement)
         db.execute('DELETE FROM sessions WHERE expires_at < UTC_TIMESTAMP()')
-        db.execute("SELECT id FROM users WHERE role='owner' AND active=1 ORDER BY created_at,id LIMIT 1")
-        owner = db.fetchone()
-        if owner: reconcile_repositories(db, owner['id'])
-    if not owner:
-        path = common.DATA / 'owner-setup-token'
-        common.DATA.mkdir(parents=True, exist_ok=True)
+        db.execute("SELECT GET_LOCK('studio_owner_setup',10) AS acquired")
+        if db.fetchone()['acquired'] != 1:
+            raise RuntimeError('Initial owner setup is busy')
         try:
-            descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        except FileExistsError:
-            pass
-        else:
-            with os.fdopen(descriptor, 'w') as file: file.write(secrets.token_urlsafe(32))
+            db.execute('SELECT COUNT(*) AS total FROM users')
+            if db.fetchone()['total'] == 0:
+                db.execute("""INSERT INTO users(id,username,display_name,password_hash,role,must_change_password)
+                    VALUES (%s,'admin','Administrator',%s,'owner',1)""",
+                    (uuid.uuid4().hex, password_hash('admin')))
+            db.execute("SELECT id FROM users WHERE role='owner' AND active=1 ORDER BY created_at,id LIMIT 1")
+            owner = db.fetchone()
+            if owner: reconcile_repositories(db, owner['id'])
+            db.connection.commit()
+        finally:
+            db.execute("SELECT RELEASE_LOCK('studio_owner_setup')")
+    (common.DATA / 'owner-setup-token').unlink(missing_ok=True)
 
 
 def reconcile_repositories(db, owner_id):
@@ -212,9 +216,6 @@ class NewUser(Payload):
     model_config = ConfigDict(extra='forbid')
 
 
-class Setup(NewUser):
-    token: str = Field(min_length=1, max_length=200)
-
 
 class UserUpdate(Payload):
     role: Literal['owner','member']
@@ -246,31 +247,6 @@ def status():
     with database() as db:
         db.execute('SELECT COUNT(*) AS total FROM users')
         return {'setup_required': db.fetchone()['total'] == 0}
-
-
-@router.post('/api/auth/setup', status_code=201)
-def setup(payload: Setup, request: Request):
-    same_origin(request)
-    path = common.DATA / 'owner-setup-token'
-    if not path.is_file() or not hmac.compare_digest(payload.token, path.read_text().strip()):
-        raise HTTPException(403, 'Invalid owner setup token')
-    with database() as db:
-        # Serialize setup across processes without exposing an unauthenticated owner race.
-        db.execute("SELECT GET_LOCK('studio_owner_setup',10) AS acquired")
-        if db.fetchone()['acquired'] != 1: raise HTTPException(409, 'Setup is busy. Try again.')
-        try:
-            db.execute('SELECT COUNT(*) AS total FROM users')
-            if db.fetchone()['total']: raise HTTPException(409, 'Owner is already configured')
-            user_id = uuid.uuid4().hex
-            db.execute('''INSERT INTO users(id,username,display_name,password_hash,role,must_change_password)
-                VALUES (%s,%s,%s,%s,'owner',0)''', (user_id,payload.username,payload.display_name,password_hash(payload.password)))
-            reconcile_repositories(db, user_id)
-            # Commit before releasing the setup lock.
-            db.connection.commit()
-        finally:
-            db.execute("SELECT RELEASE_LOCK('studio_owner_setup')")
-    path.unlink(missing_ok=True)
-    return {'message': 'Owner created. Sign in to continue.'}
 
 
 @router.post('/api/auth/login')

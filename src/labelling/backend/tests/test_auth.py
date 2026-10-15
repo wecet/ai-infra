@@ -41,12 +41,14 @@ def test_mysql_users_teams_and_repository_permissions(tmp_path, monkeypatch):
         for path in (f'/api/projects/{legacy_id}/images', f'/api/projects/{legacy_id}/versions',
                      f'/api/projects/{legacy_id}/training/jobs', '/api/admin/users'):
             assert admin.get(path).status_code==401
-        assert admin.get('/api/auth/status').json()['setup_required']
-        owner = {'username':'admin','display_name':'Owner','password':'original password 123','token':(tmp_path/'owner-setup-token').read_text()}
-        assert admin.post('/api/auth/setup',json={**owner,'token':'wrong'}).status_code==403
-        assert admin.post('/api/auth/setup',json=owner).status_code==201
-        assert admin.post('/api/auth/setup',json=owner).status_code in (403,409)
-        signed = admin.post('/api/auth/login',json={'username':'admin','password':owner['password']})
+        assert not admin.get('/api/auth/status').json()['setup_required']
+        assert not (tmp_path/'owner-setup-token').exists()
+        signed = admin.post('/api/auth/login',json={'username':'admin','password':'admin'})
+        assert signed.status_code==200 and signed.json()['must_change_password']
+        admin.headers['x-csrf-token']=signed.json()['csrf_token']
+        assert admin.get('/api/projects').status_code==403
+        assert admin.post('/api/auth/password',json={'current_password':'admin','password':'original password 123'}).status_code==200
+        signed = admin.post('/api/auth/login',json={'username':'admin','password':'original password 123'})
         assert signed.status_code==200
         assert 'HttpOnly' in signed.headers['set-cookie'] and 'SameSite=strict' in signed.headers['set-cookie']
         admin.headers['x-csrf-token']=signed.json()['csrf_token']
