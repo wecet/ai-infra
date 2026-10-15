@@ -53,7 +53,7 @@ function Versions({ project, initialVersion = "" }) {
         <td><div className="version-actions"><button onClick={() => open(item)}>View</button>
           <button className="primary" disabled={!!exporting} onClick={() => download(item)}>
             {exporting === item.id ? "Exporting…" : "Export ZIP"}</button>
-          <button className="lakefs-button" disabled={!!pushing} onClick={() => pushToLakeFS(item)}
+          <button className="lakefs-button" disabled={project.permission === "read" || !!pushing} onClick={() => pushToLakeFS(item)}
             aria-label={`Push ${item.name} to LakeFS`} title="Push to LakeFS">
             {pushing === item.id ? <span aria-hidden="true">…</span> : <LakeFSIcon />}
           </button></div></td></tr>)}</tbody></table></div>}

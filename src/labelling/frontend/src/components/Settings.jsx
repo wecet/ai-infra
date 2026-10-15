@@ -1,3 +1,4 @@
+import RepositoryAccess from "./RepositoryAccess";
 import React, { useState } from "react";
 import { api, color } from "../api";
 
@@ -36,8 +37,9 @@ function Settings({ project, onUpdated }) {
       body: JSON.stringify({ target_category_id: Number(targetId) }) })); }
     catch (e) { setMessage(e.message); } finally { setClassBusy(false); }
   }
-  return <form className="panel settings-form" onSubmit={submit}><div><h2>Project settings</h2>
+  return <><RepositoryAccess project={project} onUpdated={onUpdated} /><form className="panel settings-form" onSubmit={submit}><div><h2>Project settings</h2>
     <p className="muted">{anomaly ? "Set dataset details and the split frozen into future published versions." : "Guidance is shared with labellers. AI guidance is also included in automatic suggestions."}</p></div>
+    <fieldset className="settings-fields" disabled={project.permission === "read"}>
     <label>Project name<input required maxLength="150" {...field("name")} /></label>
     <label>Description<textarea rows="3" maxLength="2000" placeholder="Purpose, source, and scope of this dataset." {...field("description")} /></label>
     {!anomaly && <label>Labelling instructions<textarea rows="5" maxLength="4000" placeholder="Rules labellers should follow." {...field("labelling_instructions")} /></label>}
@@ -63,7 +65,8 @@ function Settings({ project, onUpdated }) {
     </section>}
     {message && <div className={message.endsWith("saved.") ? "notice" : "alert"}>{message}</div>}
     <div className="actions"><button className="primary" disabled={saving}>{saving ? "Saving…" : "Save settings"}</button></div>
-  </form>;
+    </fieldset>
+  </form></>;
 }
 
 export default Settings;

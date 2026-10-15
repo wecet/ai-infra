@@ -38,7 +38,7 @@ function History({ project, onView, onRestored }) {
           {item.restorable && <img src={`/api/projects/${project.id}/history/${entry.id}/deleted/${item.id}/file`}
             alt={item.source_path} />}<div><strong>{item.source_path}</strong>
             <div className="muted small">{item.width} × {item.height} · {item.completed ? "Annotated" : "Incomplete"}</div></div>
-          <button className="primary" disabled={!item.restorable || !!restoring}
+          <button className="primary" disabled={project.permission === "read" || !item.restorable || !!restoring}
             onClick={() => restore(entry, item)}>{restoring === item.id ? "Restoring…" : item.restorable ? "Restore image" : "Already restored"}</button>
         </article>)}</div></details> :
         <button className="text-button" disabled={!entry.samples} onClick={() => view(entry)}>View images</button>}</td>

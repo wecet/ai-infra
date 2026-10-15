@@ -19,11 +19,13 @@ const sections = [
 ];
 
 function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
+  const readOnly = project.permission === "read";
   const anomaly = project.annotation_type === "anomaly_detection";
-  const projectSections = anomaly ? sections.filter((section) => section.label !== "Label").map((section) => section.label === "Dataset" ? { ...section, tabs: [["stats", "Dashboard"], ["images", "Images"], ...section.tabs.slice(1)] } : section) : sections;
+  const baseSections = readOnly ? sections.filter((section) => section.label !== "Label") : sections;
+  const projectSections = anomaly ? sections.filter((section) => section.label !== "Label").map((section) => section.label === "Dataset" ? { ...section, tabs: [["stats", "Dashboard"], ["images", "Images"], ...section.tabs.slice(1)] } : section) : baseSections;
   const [tab, setTab] = useState(() => {
     const remembered = window.sessionStorage.getItem(`studio-project-tab:${project.id}`);
-    return projectSections.some((section) => section.tabs.some(([id]) => id === remembered)) ? remembered : anomaly ? "stats" : "annotate";
+    return projectSections.some((section) => section.tabs.some(([id]) => id === remembered)) ? remembered : anomaly || readOnly ? "stats" : "annotate";
   });
   useEffect(() => { window.sessionStorage.setItem(`studio-project-tab:${project.id}`, tab); }, [project.id, tab]);
   const [images, setImages] = useState([]);
@@ -155,6 +157,7 @@ function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
   }
   return (
     <div className="page project-page">
+      {readOnly && <p className="notice">Read-only repository · owned by @{project.owner_username}. Ask the owner for write access to make changes.</p>}
       <div className="page-heading">
         <div>
           <h1>{project.name}</h1>
@@ -167,7 +170,7 @@ function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
         <div className="import-actions">
           <button
             className="danger"
-            disabled={locked}
+            disabled={locked || project.permission !== "owner"}
             onClick={deleteProject}
           >
             Delete project
@@ -180,7 +183,7 @@ function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
               directory=""
               multiple
               hidden
-              disabled={locked}
+              disabled={locked || readOnly}
               onChange={upload}
             />
           </label>
@@ -191,7 +194,7 @@ function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
               accept=".jpg,.jpeg,.png,.webp,.bmp,.tif,.tiff"
               multiple
               hidden
-              disabled={locked}
+              disabled={locked || readOnly}
               onChange={upload}
             />
           </label>

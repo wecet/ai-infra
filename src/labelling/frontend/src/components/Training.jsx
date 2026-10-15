@@ -141,7 +141,7 @@ export default function Training({ project, initialModelId = "" }) {
     <div className="page-heading"><div><h2>Model training</h2><p className="muted">Train against an immutable dataset version and track the run in MLflow.</p></div>
       </div>
     {error && <div className="alert">{error}</div>}
-    <form className="panel training-form" onSubmit={submit}>
+    <form className="panel training-form" onSubmit={submit}><fieldset className="training-fields" disabled={project.permission === "read"}>
       <section><div className="eyebrow">DATA &amp; MODEL</div>
         <div className="training-grid"><label>Published version<select value={version} required onChange={(e) => setVersion(e.target.value)}>
           <option value="">Select a version</option>{versions.map((v) => <option key={v.id} value={v.id}>{v.name} · {v.sample_count} samples</option>)}</select></label>
@@ -180,7 +180,7 @@ export default function Training({ project, initialModelId = "" }) {
         </div> : <div className="remote-row"><label>Agent IP address<input value={endpoint} required placeholder="192.168.1.20:8090" onChange={(e) => { setEndpoint(e.target.value); setCaps(null); setProbe(""); }} /></label><button type="button" onClick={testRemote}>Test connection</button><span className="muted">{probe}</span></div>}
       </section>
       <div className="training-submit"><span className="muted small">{compatibleModels.length} compatible · {models.length - compatibleModels.length} visible but unavailable</span><button className="primary" disabled={busy || !version || !model || (kind === 'local' && !cpu && !gpu)}>{busy ? "Queuing…" : "Start training"}</button></div>
-    </form>
+    </fieldset></form>
     <div className="page-heading jobs-heading"><div><h2>Training jobs</h2><p className="muted">Compute-agent jobs continue when you refresh or close this page. Status and logs are restored automatically.</p></div><button onClick={refreshJobs}>Refresh status</button></div>
     {!jobs.length ? <div className="empty"><h2>No training jobs yet</h2><p>Publish a dataset version, choose a model, and start your first run.</p></div> :
       <div className="training-job-list">{jobs.map((job) => <article className="panel training-job-card" key={job.id}>
