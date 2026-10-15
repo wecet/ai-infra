@@ -28,6 +28,8 @@ The role dropdown in **Users & teams → Users → Manage** is available only to
 
 Owners can create users with a temporary password, promote/demote users, disable/re-enable accounts, and reset passwords. Disabling an account requires transferring its owned repositories first. Role changes, account-status changes and password resets invalidate that user's existing sessions. User records are retained rather than hard-deleted.
 
+Every password field includes an eye control: hold it with the pointer, touch, Space or Enter to reveal the value; releasing, moving away or losing focus hides it again.
+
 The user must replace a temporary/reset password before opening repositories or administration. Users can change their own password from the header's **Password** button. A password change signs out all of their sessions, including the current one.
 
 ## Teams

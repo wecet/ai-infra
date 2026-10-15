@@ -36,3 +36,9 @@
 .settings-fields, .training-fields { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: 20px; }
 .settings-fields:disabled { opacity: .7; }
 @media(max-width:700px) { .account-create { grid-template-columns: 1fr; }.account-identity { flex-wrap: wrap; }.masthead-actions { flex-wrap: wrap; }.account-toolbar { flex-wrap: wrap; }.auth-card { padding: 22px; }.account-table td { padding: 12px 8px; } }
+
+.password-input { position: relative; display: block; min-width: 0; }
+.password-input > input { box-sizing: border-box; width: 100%; padding-right: 46px; }
+.password-input > .password-reveal { position: absolute; right: 3px; top: 3px; bottom: 3px; display: inline-flex; align-items: center; justify-content: center; width: 36px; min-height: 0; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--muted); box-shadow: none; touch-action: none; user-select: none; -webkit-touch-callout: none; }
+.password-input > .password-reveal:hover, .password-input > .password-reveal[aria-pressed="true"] { color: var(--accent-ink); background: var(--accent-soft); }
+.password-input > .password-reveal:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }

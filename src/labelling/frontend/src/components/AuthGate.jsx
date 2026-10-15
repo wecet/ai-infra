@@ -1,3 +1,4 @@
+import PasswordInput from "./PasswordInput";
 import React, { useEffect, useState } from "react";
 import { api, setSession } from "../api";
 
@@ -47,9 +48,9 @@ export default function AuthGate({ children }) {
     <div><div className="eyebrow">AI STUDIO</div><h1>{passwordChange ? "Choose a new password" : "Sign in"}</h1>
       <p className="muted">{passwordChange ? "Use at least 12 characters. Changing your password signs out existing sessions." : "Access the dataset repositories shared with you."}</p></div>
     {!passwordChange && <label>Username<input name="username" required maxLength="80" pattern="[a-zA-Z0-9_.\-]+" autoComplete="username" autoFocus /></label>}
-    {passwordChange && <label>Current password<input name="current_password" type="password" required autoComplete="current-password" /></label>}
-    <label>{passwordChange ? "New password" : "Password"}<input name="password" type="password" required minLength={passwordChange ? 12 : 1} maxLength="1024" autoComplete={passwordChange ? "new-password" : "current-password"} /></label>
-    {passwordChange && <label>Confirm new password<input name="confirm_password" type="password" required minLength="12" autoComplete="new-password" /></label>}
+    {passwordChange && <label>Current password<PasswordInput name="current_password" required autoComplete="current-password" /></label>}
+    <label>{passwordChange ? "New password" : "Password"}<PasswordInput name="password" required minLength={passwordChange ? 12 : 1} maxLength="1024" autoComplete={passwordChange ? "new-password" : "current-password"} /></label>
+    {passwordChange && <label>Confirm new password<PasswordInput name="confirm_password" required minLength="12" autoComplete="new-password" /></label>}
     {error && <p className="alert" role="alert">{error}</p>}{notice && <p className="notice" role="status">{notice}</p>}
     <div className="actions"><button className="primary" disabled={busy}>{busy ? "Please wait…" : passwordChange ? "Change password" : "Sign in"}</button>
       {changing && !user?.must_change_password && <button type="button" onClick={() => setChanging(false)}>Cancel</button>}
