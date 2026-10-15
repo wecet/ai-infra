@@ -37,7 +37,7 @@ function Settings({ project, onUpdated }) {
       body: JSON.stringify({ target_category_id: Number(targetId) }) })); }
     catch (e) { setMessage(e.message); } finally { setClassBusy(false); }
   }
-  return <><RepositoryAccess project={project} onUpdated={onUpdated} /><form className="panel settings-form" onSubmit={submit}><div><h2>Project settings</h2>
+  return <div className="repository-manage"><RepositoryAccess project={project} onUpdated={onUpdated} /><form className="panel settings-form" onSubmit={submit}><div><h2>Project settings</h2>
     <p className="muted">{anomaly ? "Set dataset details and the split frozen into future published versions." : "Guidance is shared with labellers. AI guidance is also included in automatic suggestions."}</p></div>
     <fieldset className="settings-fields" disabled={project.permission === "read"}>
     <label>Project name<input required maxLength="150" {...field("name")} /></label>
@@ -66,7 +66,7 @@ function Settings({ project, onUpdated }) {
     {message && <div className={message.endsWith("saved.") ? "notice" : "alert"}>{message}</div>}
     <div className="actions"><button className="primary" disabled={saving}>{saving ? "Saving…" : "Save settings"}</button></div>
     </fieldset>
-  </form></>;
+  </form></div>;
 }
 
 export default Settings;

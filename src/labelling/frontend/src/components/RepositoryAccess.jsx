@@ -17,9 +17,9 @@ export default function RepositoryAccess({ project, onUpdated }) {
     try { const result = await api(`/projects/${project.id}/${path}`, { method, ...(values ? { body: JSON.stringify(values) } : {}) }); setMessage(result.message); setSubject(""); if (path === "owner") window.dispatchEvent(new Event("studio-repositories-changed")); else await refresh(); }
     catch (e) { setError(e.message); } finally { setBusy(false); }
   }
-  if (project.permission !== "owner") return <section className="panel account-section"><h2>Repository access</h2><p>Owned by @{project.owner_username}. Your access: {project.permission}.</p><p className="muted">Only repository owners and system owners can change access.</p></section>;
+  if (project.permission !== "owner") return <section className="panel account-section repository-access"><h2>Repository access</h2><p>Owned by @{project.owner_username}. Your access: {project.permission}.</p><p className="muted">Only repository owners and system owners can change access.</p></section>;
   const choices = kind === "user" ? access?.users || [] : access?.teams || [];
-  return <section className="panel account-section"><div><h2>Repository access</h2><p className="muted">Private to its owner and the users or teams listed below. System owners can administer every repository.</p></div>
+  return <section className="panel account-section repository-access"><div><h2>Repository access</h2><p className="muted">Private to its owner and the users or teams listed below. System owners can administer every repository.</p></div>
     {error && <p className="alert" role="alert">{error}</p>}{message && <p className="notice" role="status">{message}</p>}
     {access && <><div className="repository-owner"><span><span className="role-badge role-owner">Repository owner</span> @{access.owner_username}</span></div>
     <form className="access-grant" onSubmit={(e) => { e.preventDefault(); change("access", "PUT", { kind, subject_id: subject, permission }); }}>
