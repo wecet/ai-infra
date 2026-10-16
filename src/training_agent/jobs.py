@@ -1,6 +1,7 @@
 """Agent-owned jobs: HTTP clients observe work; they do not own its lifetime."""
 import base64
 import json
+import os
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -9,6 +10,8 @@ from fastapi import HTTPException
 
 _lock = threading.RLock()
 _active = set()
+_pending = {}
+MAX_CONCURRENT = max(1, int(os.getenv("TRAINING_MAX_CONCURRENT_JOBS", "1")))
 
 
 def now():
@@ -53,11 +56,26 @@ def start(root, job_id, manifest, dataset, handler, artifact=None):
     return status(root, job_id)
 
 
-def launch(root, job_id, handler):
+def capacity():
     with _lock:
-        if job_id in _active: return
-        _active.add(job_id)
-    threading.Thread(target=run, args=(root, job_id, handler), daemon=True).start()
+        return {'limit': MAX_CONCURRENT, 'running': len(_active), 'queued': len(_pending)}
+
+
+def launch(root, job_id, handler):
+    key = (str(root.resolve()), job_id)
+    with _lock:
+        if key in _active or key in _pending: return
+        _pending[key] = (root, job_id, handler)
+        drain()
+
+
+def drain():
+    # Called with the reentrant lock held; queued jobs do not consume threads.
+    while _pending and len(_active) < MAX_CONCURRENT:
+        key = next(iter(_pending))
+        args = _pending.pop(key)
+        _active.add(key)
+        threading.Thread(target=run, args=args, daemon=True).start()
 
 
 def run(root, job_id, handler):
@@ -92,7 +110,9 @@ def run(root, job_id, handler):
         report(status='failed', completed_at=now(), phase='failed', error=str(detail)[:2000], message=str(detail))
     finally:
         finished.set()
-        with _lock: _active.discard(job_id)
+        with _lock:
+            _active.discard((str(root.resolve()), job_id))
+            drain()
 
 
 def result(root, job_id):
@@ -110,7 +130,7 @@ def recover(root, handlers):
     for path in root.glob('*/status.json'):
         value = json.loads(path.read_text())
         with _lock:
-            if path.parent.name in _active: continue
+            if (str(root.resolve()), path.parent.name) in _active: continue
         if value['status'] == 'queued': launch(root, path.parent.name, handlers[value['kind']])
         elif value['status'] == 'running':
             value.update(status='failed', phase='interrupted', completed_at=now(),

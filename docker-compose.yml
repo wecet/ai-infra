@@ -55,6 +55,7 @@ services:
     image: mysql:8.4
     restart: unless-stopped
     environment:
+      TRAINING_MAX_CONCURRENT_JOBS: ${TRAINING_MAX_CONCURRENT_JOBS:-1}
       MYSQL_DATABASE: ${AUTH_MYSQL_DATABASE:-studio_auth}
       MYSQL_USER: ${AUTH_MYSQL_USER:-studio}
       MYSQL_PASSWORD: ${AUTH_MYSQL_PASSWORD:?Set AUTH_MYSQL_PASSWORD for the user database}

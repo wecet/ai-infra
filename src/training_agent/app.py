@@ -83,7 +83,7 @@ def capabilities():
             "reason": "GPU runtime is not exposed to this agent" if not gpu else "GPU runtime detected"},
             "models": MODELS, "workbenches": discover_workbenches(),
             "tensorboard": {"available": bool(TENSORBOARD_URL), "url": TENSORBOARD_URL},
-            "async_jobs": True, "workspace_root": os.environ.get("TRAINING_WORKSPACES_ROOT", "/workspaces")}
+            "capacity": agent_jobs.capacity(), "async_jobs": True, "workspace_root": os.environ.get("TRAINING_WORKSPACES_ROOT", "/workspaces")}
 
 
 def _classification(coco, root):
