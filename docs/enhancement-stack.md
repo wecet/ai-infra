@@ -27,3 +27,16 @@ Each branch starts at the preceding branch tip. Each slice has its own scoped co
 | fix/integration-boundaries | Authorization, state, split and artifact regression checks |
 
 Checkpoint resume and new Language/LLM project families were explicitly deferred in the brainstorm and are outside this stack.
+
+## Validation completed
+
+The final integration branch contains all 21 slices and their regression fixes. All branch tips were checked for sequential ancestry.
+
+- Full local verification: 57 backend tests (including isolated MySQL authorization), 15 agent tests, 8 PyTorch augmentation/Grad-CAM tests, 3 tooling tests and 12 frontend tests, plus static checks, the production build and Compose validation.
+- Both PyTorch workbench smoke workflows passed discovery, fitting/validation, artifact reload, inference, TensorBoard and Grad-CAM.
+- Both runtime images built under separate test tags. An isolated container workflow passed sign-in, import preview, annotation, publication, readiness, training, binary artifact download, held-out evaluation, provenance and deterministic augmentation previews.
+- Backup/restoration of disposable Studio and training-run volumes passed checksum/path checks, SQLite/image/model reference validation and restored-service model/evaluation/artifact retrieval. Complete MySQL/lakeFS/MLflow service restore rehearsal remains an operator check; all configured named volumes are included by the backup command.
+- Dependency audit reports zero vulnerabilities. Existing FastAPI test-client deprecation and demo Pydantic Enum serialization warnings remain non-failing.
+- Interactive browser inspection was unavailable in this environment. Component rendering smoke tests, static checks and production compilation passed; visual keyboard/theme checks remain manual.
+
+No changes were deployed to the existing running stack, and main was not advanced. The aggregate branch is `fix/integration-boundaries`. Checkpoint resume, general serving, group-aware splits and new project families remain deferred as originally discussed.
