@@ -2,6 +2,7 @@
 import base64
 import json
 import os
+import shutil
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -42,8 +43,13 @@ def start(root, job_id, manifest, dataset, handler, artifact=None):
         directory.mkdir(parents=True)
         try:
             write(directory / 'manifest.json', manifest)
-            (directory / 'dataset.zip').write_bytes(dataset)
-            if artifact is not None: (directory / 'input-model').write_bytes(artifact)
+            with (directory / 'dataset.zip').open('wb') as output:
+                if hasattr(dataset, 'read'): shutil.copyfileobj(dataset, output)
+                else: output.write(dataset)
+            if artifact is not None:
+                with (directory / 'input-model').open('wb') as output:
+                    if hasattr(artifact, 'read'): shutil.copyfileobj(artifact, output)
+                    else: output.write(artifact)
             write(directory / 'status.json', {'id': job_id, 'kind': manifest.get('kind', 'training'),
                 'status': 'queued', 'phase': 'queued', 'created_at': now(), 'started_at': None,
                 'completed_at': None, 'heartbeat_at': now(), 'metrics': {}, 'latest_metric': None,
@@ -121,7 +127,9 @@ def run(root, job_id, handler):
         result = handler(manifest, directory, report)
         if 'artifact' in result:
             artifact = result['artifact']
-            (directory / 'model.bin').write_bytes(base64.b64decode(artifact.pop('content_base64'), validate=True))
+            if 'local_path' in artifact:
+                Path(artifact.pop('local_path')).replace(directory / 'model.bin')
+            else: (directory / 'model.bin').write_bytes(base64.b64decode(artifact.pop('content_base64'), validate=True))
         write(directory / 'result.json', result)
         report(status='succeeded', completed_at=now(), phase='completed', metrics=result.get('metrics'), message='Job completed')
     except Cancelled:
@@ -139,12 +147,12 @@ def run(root, job_id, handler):
             drain()
 
 
-def result(root, job_id):
+def result(root, job_id, binary=False):
     value = status(root, job_id)
     if value['status'] != 'succeeded': raise HTTPException(409, 'Agent job has not succeeded')
     directory = root / job_id
     value = json.loads((directory / 'result.json').read_text())
-    if 'artifact' in value:
+    if 'artifact' in value and not binary:
         value['artifact']['content_base64'] = base64.b64encode((directory / 'model.bin').read_bytes()).decode()
     return value
 

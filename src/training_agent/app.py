@@ -17,6 +17,7 @@ from contextlib import asynccontextmanager
 import jobs as agent_jobs
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from PIL import Image, ImageStat
+from fastapi.responses import FileResponse
 from ai_interfaces import AnomalyModelConfig, BaseModelConfig, DatasetVersion, TrainingContext
 from pydantic import Field
 from workbenches import discover_workbenches, find_workbench, load_model
@@ -152,7 +153,7 @@ def train(manifest: str = Form(...), dataset: UploadFile = File(...)):
     return train_model(manifest, dataset)
 
 
-def train_model(manifest, dataset, report=None):
+def train_model(manifest, dataset, report=None, binary=False):
     try: config = json.loads(manifest)
     except json.JSONDecodeError as exc: raise HTTPException(422, "Invalid training manifest") from exc
     task = config.get("annotation_type"); model_key = config.get("base_model")
@@ -204,9 +205,9 @@ def train_model(manifest, dataset, report=None):
             if not artifact_path.is_file() or artifact_path.stat().st_size > 512 * 1024 * 1024:
                 raise HTTPException(422, "Workbench artifact is missing or exceeds 512 MiB")
             artifact = {"filename": artifact_path.name, "media_type": result.artifact.media_type,
-                        "content_base64": base64.b64encode(artifact_path.read_bytes()).decode()}
+                        **({'local_path': str(artifact_path)} if binary else {'content_base64': base64.b64encode(artifact_path.read_bytes()).decode()})}
             # Keep event files for live/history dashboards; the Studio stores the final artifact.
-            artifact_path.unlink()
+            if not binary: artifact_path.unlink()
             metrics, summary = dict(result.metrics), result.summary
         else:
             payload, metrics = (_anomaly(coco, work / "dataset", model_config) if task == "anomaly_detection" else _classification(coco, work / "dataset") if task == "image_classification"
@@ -231,7 +232,7 @@ def train_model(manifest, dataset, report=None):
 
 def execute_training(manifest, directory, report):
     with (directory / "dataset.zip").open("rb") as stream:
-        return train_model(json.dumps(manifest), UploadFile(filename="dataset.zip", file=stream), report)
+        return train_model(json.dumps(manifest), UploadFile(filename="dataset.zip", file=stream), report, binary=True)
 
 
 def execute_evaluation(manifest, directory, report):
@@ -250,7 +251,7 @@ def request_manifest(manifest):
 @app.post("/api/v1/jobs", status_code=202)
 def submit_job(manifest: str = Form(...), dataset: UploadFile = File(...)):
     value = request_manifest(manifest); value["kind"] = "training"
-    return agent_jobs.start(jobs_root(), value["job_id"], value, dataset.file.read(), execute_training)
+    return agent_jobs.start(jobs_root(), value["job_id"], value, dataset.file, execute_training)
 
 
 @app.get("/api/v1/jobs/{job_id}")
@@ -260,18 +261,27 @@ def job_status(job_id: str):
 
 
 @app.get("/api/v1/jobs/{job_id}/result")
-def job_result(job_id: str):
+def job_result(job_id: str, binary: bool = False):
     job_status(job_id)
-    return agent_jobs.result(jobs_root(), job_id)
+    return agent_jobs.result(jobs_root(), job_id, binary=binary)
 
 
 @app.post("/api/v1/evaluations", status_code=202)
 def submit_evaluation(manifest: str = Form(...), dataset: UploadFile = File(...), artifact: UploadFile = File(...)):
     value = request_manifest(manifest); value["kind"] = "evaluation"
-    return agent_jobs.start(jobs_root(), value["job_id"], value, dataset.file.read(), execute_evaluation, artifact.file.read())
+    return agent_jobs.start(jobs_root(), value["job_id"], value, dataset.file, execute_evaluation, artifact.file)
 
 
 @app.post("/api/v1/jobs/{job_id}/cancel")
 def cancel_job(job_id: str):
     job_status(job_id)
     return agent_jobs.cancel(jobs_root(), job_id)
+
+
+@app.get('/api/v1/jobs/{job_id}/artifact')
+def job_artifact(job_id: str):
+    job_status(job_id)
+    agent_jobs.result(jobs_root(), job_id, binary=True)
+    path = jobs_root() / job_id / 'model.bin'
+    if not path.is_file(): raise HTTPException(404, 'Artifact unavailable')
+    return FileResponse(path, media_type='application/octet-stream')

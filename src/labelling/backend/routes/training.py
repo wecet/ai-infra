@@ -1,4 +1,5 @@
 """Version-bound training orchestration for local and remote compute agents."""
+import tempfile
 import base64
 import hashlib
 import io
@@ -95,9 +96,9 @@ def training_template(project_id: str, version_id: str):
             "annotation_type": project["annotation_type"], "dataset_name": detail["name"]}
 
 
-def _archive(project_id, version_id, image_ids=None):
+def _archive(project_id, version_id, image_ids=None, stream=False):
     detail = version_detail(project_id, version_id)
-    _, manifest, objects = _version_content(project_id, version_id, detail)
+    _, manifest, objects = _version_content(project_id, version_id, detail, lazy=stream)
     by_name = {f"images/{item['stored_name']}": item for item in detail['snapshot']['images']}
     for record in manifest['images']:
         record['studio_image_id'] = by_name[record['file_name']]['id']
@@ -112,10 +113,14 @@ def _archive(project_id, version_id, image_ids=None):
     if manifest['info']['annotation_type'] == 'anomaly_detection':
         manifest['info']['train_samples'] = sum(image.get('split') == 'train' for image in manifest['images'])
         manifest['info']['test_samples'] = sum(image.get('split') == 'test' for image in manifest['images'])
-    buffer = io.BytesIO()
+    buffer = tempfile.TemporaryFile() if stream else io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as bundle:
         for path, content, _ in objects:
-            bundle.writestr(path, json.dumps(manifest).encode() if path.endswith('.json') else content)
+            if isinstance(content, Path): bundle.write(content, path)
+            else: bundle.writestr(path, json.dumps(manifest).encode() if path.endswith('.json') else content)
+    if stream:
+        buffer.seek(0)
+        return detail, buffer
     return detail, buffer.getvalue()
 
 
@@ -185,7 +190,9 @@ def _finish(job, result, model_config):
     artifact_data = result['artifact']
     filename = re.sub(r'[^A-Za-z0-9._-]+', '_', artifact_data.get('filename', 'model.bin'))[:150] or 'model.bin'
     artifact = output / filename
-    artifact.write_bytes(base64.b64decode(artifact_data['content_base64'], validate=True))
+    if '_downloaded_path' in artifact_data:
+        Path(artifact_data['_downloaded_path']).replace(artifact)
+    else: artifact.write_bytes(base64.b64decode(artifact_data['content_base64'], validate=True))
     config = result.get('config', model_config)
     with database() as db:
         provenance = json.loads(db.execute('SELECT provenance FROM training_jobs WHERE id=?', (job_id,)).fetchone()['provenance'])
@@ -223,7 +230,7 @@ def _run(job_id):
                 with database() as db: db.execute("UPDATE training_jobs SET phase='reconnecting',error=? WHERE id=?", (str(error.detail)[:2000], job_id))
                 time.sleep(5)
         selected = json.loads(job['dataset_partition'])
-        detail, archive = _archive(job['project_id'], job['version_id'], selected.get('train', []) + selected.get('validation', []))
+        detail, archive = _archive(job['project_id'], job['version_id'], selected.get('train', []) + selected.get('validation', []), stream=True)
         hyperparameters = json.loads(job['hyperparameters'])
         model_config = {'dataset_path': '/workspace/dataset.zip', 'output_path': f'/workspace/outputs/{job_id}',
             'mlflow_url': MLFLOW_URL, 'project_id': job['project_id'], 'dataset_version_id': job['version_id'],
@@ -262,8 +269,17 @@ def _run(job_id):
                         return
                     if value['status'] == 'failed': raise RuntimeError(value.get('error') or 'Agent job failed')
                     if value['status'] == 'succeeded':
-                        response = httpx.get(f'{agent}/api/v1/jobs/{job_id}/result', timeout=120)
-                        response.raise_for_status(); result = response.json(); break
+                        response = httpx.get(f'{agent}/api/v1/jobs/{job_id}/result?binary=true', timeout=120)
+                        response.raise_for_status(); result = response.json()
+                        if 'content_base64' not in result['artifact']:
+                            download = DATA / 'training' / f'{job_id}.download'
+                            download.parent.mkdir(parents=True, exist_ok=True)
+                            with httpx.stream('GET', f'{agent}/api/v1/jobs/{job_id}/artifact', timeout=120) as incoming:
+                                incoming.raise_for_status()
+                                with download.open('wb') as output:
+                                    for chunk in incoming.iter_bytes(): output.write(chunk)
+                            result['artifact']['_downloaded_path'] = str(download)
+                        break
                 except httpx.HTTPError as error:
                     # A transient disconnect does not cancel compute or change the run's outcome.
                     with database() as db: db.execute("UPDATE training_jobs SET phase='reconnecting',error=? WHERE id=?",
@@ -285,6 +301,7 @@ def _run(job_id):
         with database() as db: db.execute("UPDATE training_jobs SET status='failed',phase='failed',error=?,completed_at=? WHERE id=?",
             (str(error)[:2000], datetime.now(timezone.utc).isoformat(), job_id))
     finally:
+        if 'archive' in locals() and hasattr(archive, 'close'): archive.close()
         with _running_lock: _running.discard(job_id)
 
 

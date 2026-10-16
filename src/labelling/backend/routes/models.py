@@ -92,18 +92,20 @@ def run_evaluation(evaluation_id):
             db.execute("UPDATE model_evaluations SET status='running' WHERE id=?", (evaluation_id,))
         agent = _agent_url(json.loads(model['compute_target']))
         partition = json.loads(model['dataset_partition'])
-        _, archive = _archive(model['project_id'], model['version_id'], partition['test'])
+        _, archive = _archive(model['project_id'], model['version_id'], partition['test'], stream=True)
         config = json.loads(model['effective_config'])
         manifest = {'job_id': evaluation_id, 'base_model': model['base_model'], 'annotation_type': model['task_type'], 'config': config}
+        model_stream = Path(model['artifact_path']).open('rb')
         def waiting(message):
             with database() as db:
                 db.execute("UPDATE model_evaluations SET error=? WHERE id=?", (f'Reconnecting: {message}'[:2000], evaluation_id))
         def accepted():
+            archive.seek(0); model_stream.seek(0)
             response = httpx.get(f'{agent}/api/v1/jobs/{evaluation_id}', timeout=10)
             if response.status_code == 404:
                 response = httpx.post(f'{agent}/api/v1/evaluations', data={'manifest': json.dumps(manifest)},
                     files={'dataset': ('held-out.zip', archive, 'application/zip'),
-                           'artifact': ('model.bin', Path(model['artifact_path']).read_bytes(), 'application/octet-stream')}, timeout=120)
+                           'artifact': ('model.bin', model_stream, 'application/octet-stream')}, timeout=120)
             response.raise_for_status()
         reconnect(accepted, waiting)
         def fetch(suffix=''):
@@ -123,4 +125,7 @@ def run_evaluation(evaluation_id):
     except Exception as error:
         with database() as db: db.execute("UPDATE model_evaluations SET status='failed',error=? WHERE id=?", (str(error)[:2000], evaluation_id))
     finally:
+        for name in ('archive', 'model_stream'):
+            stream = locals().get(name)
+            if hasattr(stream, 'close'): stream.close()
         with _lock: _active.discard(evaluation_id)

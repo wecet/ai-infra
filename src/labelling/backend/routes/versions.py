@@ -57,7 +57,7 @@ def version_detail(project_id: str, version_id: str):
             'snapshot': json.loads(row['snapshot'])}
 
 
-def _version_content(project_id, version_id, detail):
+def _version_content(project_id, version_id, detail, lazy=False):
     snapshot, project = detail['snapshot'], detail['snapshot']['project']
     safe_project = re.sub(r'[^A-Za-z0-9._-]+', '_', project['name']).strip('._-')[:80] or 'project'
     archive_name = f"{safe_project}_{detail['name']}"
@@ -82,7 +82,7 @@ def _version_content(project_id, version_id, detail):
         path = DATA / 'versions' / project_id / version_id / item['stored_name']
         if not path.is_file():
             raise HTTPException(404, f'Frozen image {item["source_path"]} is unavailable')
-        objects.append((record['file_name'], path.read_bytes(), 'application/octet-stream'))
+        objects.append((record['file_name'], path if lazy else path.read_bytes(), 'application/octet-stream'))
         for box in item['boxes']:
             coco['annotations'].append({'id': len(coco['annotations']) + 1, 'image_id': image_id,
                 'category_id': box['category_id'], 'bbox': [box['x'], box['y'], box['width'], box['height']],
