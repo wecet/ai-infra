@@ -21,6 +21,7 @@ if __name__ == '__main__':
     run([sys.executable, 'tests/smoke.py'])
     frontend = ROOT / 'src/labelling/frontend'
     run(['npm', 'ci'], cwd=frontend)
+    run(['npm', 'run', 'lint'], cwd=frontend)
     run(['npm', 'test'], cwd=frontend)
     run(['npm', 'run', 'build'], cwd=frontend)
     run(['docker', 'compose', '--env-file', '.env.example', 'config', '--quiet'])

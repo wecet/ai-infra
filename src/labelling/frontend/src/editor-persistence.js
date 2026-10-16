@@ -37,6 +37,5 @@ export function useAnnotationPersistence({ path, data, setData, onSaved }) {
       setSaving(false);
     }
   }
-  const disabled = saving || uploading || !ready || !data;
   return { saving, setSaving, dirty, setDirty, error, setError, inFlight, undoStack, redoStack, persist };
 }

@@ -63,6 +63,7 @@ function Editor({
   useEffect(() => {
     onLock(saving || dirty || uploading || !!draft);
   }, [saving, dirty, uploading, !!draft]);
+  const disabled = saving || uploading || !ready || !data;
   useUnsavedGuard(saving || dirty || uploading);
   function point(e) { return imagePoint(e, svg.current.getBoundingClientRect(), image); }
   function start(e, boxIndex = null, resize = false) {

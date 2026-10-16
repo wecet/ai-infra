@@ -41,3 +41,17 @@ def test_cancel_waiting_and_cooperative_running_job(tmp_path, monkeypatch):
         assert jobs.cancel(tmp_path, 'running')['status'] == 'cancelling'
     finally: gate.set()
     wait_for(lambda: jobs.status(tmp_path, 'running')['status'] == 'cancelled')
+
+
+def test_streamed_artifact_result_has_binary_download_metadata(tmp_path):
+    import io
+    def handler(manifest, directory, report):
+        artifact = directory / 'produced.pt'
+        artifact.write_bytes(b'weights')
+        return {'artifact': {'filename': 'model.pt', 'local_path': str(artifact)}}
+    jobs.start(tmp_path, 'binary', {}, io.BytesIO(b'archive'), handler)
+    wait_for(lambda: jobs.status(tmp_path, 'binary')['status'] == 'succeeded')
+    assert (tmp_path / 'binary' / 'dataset.zip').read_bytes() == b'archive'
+    result = jobs.result(tmp_path, 'binary', binary=True)
+    assert result['artifact'] == {'filename': 'model.pt'}
+    assert (tmp_path / 'binary' / 'model.bin').read_bytes() == b'weights'

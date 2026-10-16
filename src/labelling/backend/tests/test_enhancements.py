@@ -103,3 +103,36 @@ def test_training_permanent_agent_errors_finish_instead_of_polling_forever(clien
     service.training._run(new['id'])
     jobs = client.get(f'/api/projects/{pid}/training/jobs').json()
     assert next(item for item in jobs if item['id'] == new['id'])['status'] == 'failed'
+
+
+def test_streaming_archive_does_not_materialize_frozen_images(client, monkeypatch):
+    from pathlib import Path
+    pid = project(client)
+    job, model, row = seed_model(client, monkeypatch, pid)
+    original = Path.read_bytes
+    def guarded(path):
+        assert 'versions' not in path.parts, 'Frozen images must be streamed from disk'
+        return original(path)
+    monkeypatch.setattr(Path, 'read_bytes', guarded)
+    _, archive = service.training._archive(pid, job['version_id'], stream=True)
+    with archive:
+        import zipfile
+        with zipfile.ZipFile(archive) as bundle:
+            assert len([n for n in bundle.namelist() if n.startswith('images/')]) == 6
+
+
+def test_managed_training_configuration_cannot_be_overridden(client, monkeypatch):
+    pid = project(client)
+    job, model, row = seed_model(client, monkeypatch, pid)
+    response = client.post(f'/api/projects/{pid}/training/jobs', json={'version_id': job['version_id'], 'base_model': job['base_model'], 'hyperparameters': {'class_names': ['different'], 'output_path': '/elsewhere'}})
+    assert response.status_code == 422
+
+
+def test_annotation_preview_reports_class_mapping_without_changes(client):
+    pid = project(client)
+    before = client.get(f'/api/projects/{pid}/images').json()
+    document = {'images': [{'id': 1, 'file_name': 'new.png', 'category_ids': [1]}], 'categories': [{'id': 1, 'name': 'Unknown'}], 'annotations': []}
+    response = client.post(f'/api/projects/{pid}/annotations/preview', files={'file': ('data.json', json.dumps(document))})
+    assert response.status_code == 200, response.text
+    assert not response.json()['can_import'] and response.json()['class_mapping'][0]['target'] is None
+    assert client.get(f'/api/projects/{pid}/images').json() == before
