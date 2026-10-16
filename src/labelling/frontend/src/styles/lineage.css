@@ -49,3 +49,6 @@
 .lineage-counts :is(.metric-data, .metric-model) { background: var(--metric-surface); border-color: var(--metric-border); border-inline-start: 4px solid var(--metric-ink); }
 .lineage-counts :is(.metric-data, .metric-model) strong { color: var(--metric-ink); }
 [data-theme="dark"] .lineage-counts :is(.metric-data, .metric-model) { background: var(--metric-surface); border-color: var(--metric-border); border-inline-start-color: var(--metric-ink); }
+
+.lineage-stage-nodes[hidden] { display: none; }
+.lineage-node.selected { outline: 2px solid var(--accent); outline-offset: 2px; }

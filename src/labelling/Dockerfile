@@ -15,6 +15,7 @@ COPY backend/lakefs_client.py ./
 COPY backend/common.py ./
 COPY backend/auth.py ./
 COPY backend/routes ./routes
+COPY backend/services ./services
 COPY --from=frontend /build/dist /app/static
 RUN mkdir /data
 ENV LABELLING_DATA_DIR=/data

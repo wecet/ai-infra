@@ -1,5 +1,7 @@
 from fastapi import APIRouter
-from common import *
+from common import (
+    AnnotationSave, BaseModel, BatchCreate, BulkReview, DATA, Field, File, FileResponse, HTTPException, Image, ImageOps, Lock, MAX_UPLOAD, PurePosixPath, Request, ReviewDecision, UnidentifiedImageError, UploadFile, ai_labelling, database, datetime, freeze_addition_batches, get_image, get_project, hashlib, image_json, io, json, perceptual_hash, shutil, sqlite3, timezone, uuid, warnings
+)
 
 router = APIRouter()
 
@@ -347,3 +349,27 @@ def suggest_annotations(project_id: str, image_id: str, payload: AISuggestReques
             boxes=boxes, completed=False, revision=payload.revision))
     finally:
         ai_lock.release()
+
+
+@router.post('/api/projects/{project_id}/imports/preview')
+def preview_image(project_id: str, file: UploadFile = File(...)):
+    with database() as db:
+        get_project(db, project_id)
+        source = (file.filename or 'image').replace('\\', '/')
+        path = PurePosixPath(source)
+        if path.is_absolute() or '..' in path.parts or len(source) > 1000: raise HTTPException(422, 'Invalid image path')
+        existing = db.execute('SELECT digest FROM images WHERE project_id=? AND source_path=?', (project_id, source)).fetchone()
+    raw = file.file.read(MAX_UPLOAD + 1)
+    if len(raw) > MAX_UPLOAD: raise HTTPException(413, 'Each image must be at most 50 MiB')
+    digest = hashlib.sha256(raw).hexdigest()
+    if existing and existing['digest'] != digest: raise HTTPException(409, 'Name conflicts with different existing contents')
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter('error', Image.DecompressionBombWarning)
+            with Image.open(io.BytesIO(raw)) as image:
+                if image.format not in {'JPEG', 'PNG', 'WEBP', 'BMP', 'TIFF'}: raise HTTPException(422, 'Unsupported image format')
+                normalized = ImageOps.exif_transpose(image).convert('RGB')
+                width, height = normalized.size
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError, Image.DecompressionBombWarning):
+        raise HTTPException(422, 'Invalid image or exceeds the 40 megapixel limit')
+    return {'source_path': source, 'width': width, 'height': height, 'sha256': digest, 'status': 'existing' if existing else 'accepted'}

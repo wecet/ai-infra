@@ -20,12 +20,19 @@ def train(model, context, loss_for, augmentor):
     device = device_for(context.devices)
     model.network = model.build_network().to(device)
     dataset = StudioDataset(context.dataset.archive, config, model.descriptor().task)
-    order = torch.randperm(len(dataset)).tolist()
-    count = min(len(dataset) - 1, max(1, int(len(dataset) * config.validation_split))) if config.validation_split else 0
-    validation = Subset(dataset, order[:count])
+    frozen = all(record.get('split') in ('train', 'validation') for record in dataset.records)
+    if frozen:
+        train_indices = [i for i, record in enumerate(dataset.records) if record['split'] == 'train']
+        valid_indices = [i for i, record in enumerate(dataset.records) if record['split'] == 'validation']
+    else:
+        order = torch.randperm(len(dataset)).tolist()
+        count = min(len(dataset) - 1, max(1, int(len(dataset) * config.validation_split))) if config.validation_split else 0
+        valid_indices, train_indices = order[:count], order[count:]
+    if not train_indices: raise ValueError('No fitting samples')
+    validation = Subset(dataset, valid_indices)
     augmented = StudioDataset(context.dataset.archive, config, model.descriptor().task, augmentor)
-    training = Subset(augmented, order[count:])
-    cam_samples = validation if len(validation) else Subset(dataset, order[count:])
+    training = Subset(augmented, train_indices)
+    cam_samples = validation if len(validation) else Subset(dataset, train_indices)
     loader = DataLoader(training, batch_size=config.batch_size, shuffle=True, collate_fn=collate)
     optimizer = torch.optim.Adam(model.network.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay)
     context.output_dir.mkdir(parents=True, exist_ok=True)

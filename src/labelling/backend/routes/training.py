@@ -1,5 +1,7 @@
 """Version-bound training orchestration for local and remote compute agents."""
+import tempfile
 import base64
+import hashlib
 import io
 import math
 import random
@@ -21,8 +23,9 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, model_validator
 
+from services.agent_polling import reconnect
 from common import DATA, database, get_project
-from routes.versions import _version_content, version_detail
+from services.datasets import _archive, version_detail
 
 router = APIRouter()
 LOCAL_AGENT = os.environ.get("TRAINING_AGENT_URL", "http://training-agent:8090").rstrip("/")
@@ -46,10 +49,17 @@ class ComputeTarget(BaseModel):
 
 
 class JobCreate(BaseModel):
+    parent_job_id: str | None = Field(default=None, max_length=64)
     version_id: str = Field(min_length=1, max_length=64)
     base_model: str = Field(min_length=1, max_length=150)
     hyperparameters: dict = Field(default_factory=dict)
     compute: ComputeTarget = Field(default_factory=ComputeTarget)
+
+    @model_validator(mode='after')
+    def protect_managed_config(self):
+        managed = {'dataset_path', 'output_path', 'mlflow_url', 'project_id', 'dataset_version_id', 'class_names', 'devices'}
+        if managed.intersection(self.hyperparameters): raise ValueError('Infrastructure configuration is managed by Studio')
+        return self
 
 
 def _agent_url(target):
@@ -57,12 +67,14 @@ def _agent_url(target):
     raw = target["endpoint"].strip()
     if "://" not in raw: raw = "http://" + raw
     parsed = urllib.parse.urlparse(raw)
-    if parsed.scheme not in {"http", "https"} or parsed.username or parsed.password or parsed.path not in {"", "/"}:
+    if parsed.scheme not in {"http", "https"} or parsed.username or parsed.password or parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
         raise HTTPException(422, "Use an IP address and optional port, for example 192.168.1.20:8090")
     try: ipaddress.ip_address(parsed.hostname or "")
     except ValueError as exc: raise HTTPException(422, "Remote compute target must be an IP address") from exc
-    port = parsed.port or 8090
-    return f"{parsed.scheme}://{parsed.hostname}:{port}"
+    try: port = parsed.port or 8090
+    except ValueError as error: raise HTTPException(422, 'Invalid compute agent port') from error
+    host = f'[{parsed.hostname}]' if ':' in parsed.hostname else parsed.hostname
+    return f"{parsed.scheme}://{host}:{port}"
 
 
 def _capabilities(url):
@@ -91,40 +103,11 @@ def training_template(project_id: str, version_id: str):
             "output_path": f"/outputs/{project_id}/{{job_id}}", "mlflow_url": MLFLOW_PUBLIC_URL,
             "project_id": project_id, "dataset_version_id": version_id,
             "class_names": [item["name"] for item in project["classes"]],
-            "annotation_type": project["annotation_type"], "dataset_name": detail["name"]}
+            "annotation_type": project["annotation_type"], "dataset_name": detail["name"],
+            "partitions": {key: len(value) for key, value in partition(detail["snapshot"]).items() if isinstance(value, list)}}
 
 
-def _archive(project_id, version_id, image_ids=None):
-    detail = version_detail(project_id, version_id)
-    _, manifest, objects = _version_content(project_id, version_id, detail)
-    by_name = {f"images/{item['stored_name']}": item for item in detail['snapshot']['images']}
-    for record in manifest['images']:
-        record['studio_image_id'] = by_name[record['file_name']]['id']
-    if image_ids is not None:
-        allowed = set(image_ids)
-        manifest['images'] = [record for record in manifest['images'] if record['studio_image_id'] in allowed]
-        ids = {record['id'] for record in manifest['images']}
-        manifest['annotations'] = [item for item in manifest['annotations'] if item['image_id'] in ids]
-        files = {record['file_name'] for record in manifest['images']}
-        objects = [item for item in objects if item[0] in files or item[0].endswith('.json')]
-    manifest['info']['archive_samples'] = len(manifest['images'])
-    if manifest['info']['annotation_type'] == 'anomaly_detection':
-        manifest['info']['train_samples'] = sum(image.get('split') == 'train' for image in manifest['images'])
-        manifest['info']['test_samples'] = sum(image.get('split') == 'test' for image in manifest['images'])
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as bundle:
-        for path, content, _ in objects:
-            bundle.writestr(path, json.dumps(manifest).encode() if path.endswith('.json') else content)
-    return detail, buffer.getvalue()
-
-
-def partition(snapshot):
-    images = sorted(snapshot['images'], key=lambda image: (image['source_path'], image['id']))
-    if all(image.get('split') in {'train', 'test'} for image in images):
-        return {split: [image['id'] for image in images if image['split'] == split] for split in ('train', 'test')}
-    random.Random(42).shuffle(images)
-    cut = math.floor(len(images) * snapshot['project'].get('export_train_percent', 80) / 100 + .5)
-    return {'train': [image['id'] for image in images[:cut]], 'test': [image['id'] for image in images[cut:]], 'seed': 42}
+from services.partitions import partition
 
 
 def _mlflow(job, metrics, config):
@@ -165,7 +148,7 @@ def start_job(job_id):
 
 def resume_jobs():
     with database() as db:
-        ids = [row['id'] for row in db.execute("SELECT id FROM training_jobs WHERE status IN ('queued','running')")]
+        ids = [row['id'] for row in db.execute("SELECT id FROM training_jobs WHERE status IN ('queued','running','cancelling')")]
     for job_id in ids:
         with database() as db:
             record = db.execute('SELECT dataset_partition FROM training_jobs WHERE id=?', (job_id,)).fetchone()
@@ -178,9 +161,9 @@ def resume_jobs():
 
 def _persist_progress(job_id, value):
     with database() as db:
-        db.execute("""UPDATE training_jobs SET status='running',phase=?,heartbeat_at=?,logs=?,metrics=?,latest_metric=?,
-            started_at=COALESCE(started_at,?),error='' WHERE id=? AND status IN ('queued','running')""",
-            (value.get('phase', 'training'), value.get('heartbeat_at'), json.dumps(value.get('logs', [])),
+        db.execute("""UPDATE training_jobs SET status=?,phase=?,heartbeat_at=?,logs=?,metrics=?,latest_metric=?,
+            started_at=COALESCE(started_at,?),error='' WHERE id=? AND status IN ('queued','running','cancelling')""",
+            (value['status'] if value.get('status') in ('queued', 'cancelling') else 'running', value.get('phase', 'training'), value.get('heartbeat_at'), json.dumps(value.get('logs', [])),
              json.dumps(value.get('metrics', {})), json.dumps(value.get('latest_metric') or {}), value.get('started_at'), job_id))
 
 
@@ -189,9 +172,16 @@ def _finish(job, result, model_config):
     output = DATA / 'training' / job_id; output.mkdir(parents=True, exist_ok=True)
     artifact_data = result['artifact']
     filename = re.sub(r'[^A-Za-z0-9._-]+', '_', artifact_data.get('filename', 'model.bin'))[:150] or 'model.bin'
+    if filename in ('.', '..'): filename = 'model.bin'
     artifact = output / filename
-    artifact.write_bytes(base64.b64decode(artifact_data['content_base64'], validate=True))
+    if '_downloaded_path' in artifact_data:
+        Path(artifact_data['_downloaded_path']).replace(artifact)
+    else: artifact.write_bytes(base64.b64decode(artifact_data['content_base64'], validate=True))
     config = result.get('config', model_config)
+    with database() as db:
+        provenance = json.loads(db.execute('SELECT provenance FROM training_jobs WHERE id=?', (job_id,)).fetchone()['provenance'])
+        provenance.update(agent=result.get('provenance', {}), effective_config=config)
+        db.execute('UPDATE training_jobs SET provenance=? WHERE id=?', (json.dumps(provenance), job_id))
     metrics = result.get('metrics', {})
     key = 'validation_loss' if 'validation_loss' in metrics else next(iter(metrics), None)
     latest = {'name': key, 'value': metrics[key]} if key else {}
@@ -210,51 +200,76 @@ def _finish(job, result, model_config):
             VALUES (?,?,?,?,?,?,?)""", (uuid.uuid4().hex, job['project_id'], job_id, job['base_model'], model_version, run_id, completed))
 
 
+class CancelledWork(Exception):
+    pass
+
+
 def _run(job_id):
     with database() as db:
         job = dict(db.execute('SELECT * FROM training_jobs WHERE id=?', (job_id,)).fetchone())
     try:
         target = json.loads(job['compute_target']); agent = _agent_url(target)
-        while True:
-            try: caps = _capabilities(agent); break
+        def waiting(message):
+            with database() as db: db.execute("UPDATE training_jobs SET phase='reconnecting',error=? WHERE id=?", (f'Waiting for agent: {message}'[:2000], job_id))
+        def capability_request():
+            try: return _capabilities(agent)
             except HTTPException as error:
-                with database() as db: db.execute("UPDATE training_jobs SET phase='reconnecting',error=? WHERE id=?", (str(error.detail)[:2000], job_id))
-                time.sleep(5)
+                if error.status_code != 502: raise
+                raise httpx.ConnectError(str(error.detail)) from error
+        caps = reconnect(capability_request, waiting)
         selected = json.loads(job['dataset_partition'])
-        detail, archive = _archive(job['project_id'], job['version_id'], selected.get('train'))
+        detail, archive = _archive(job['project_id'], job['version_id'], selected.get('train', []) + selected.get('validation', []), stream=True)
         hyperparameters = json.loads(job['hyperparameters'])
         model_config = {'dataset_path': '/workspace/dataset.zip', 'output_path': f'/workspace/outputs/{job_id}',
             'mlflow_url': MLFLOW_URL, 'project_id': job['project_id'], 'dataset_version_id': job['version_id'],
             'class_names': [item['name'] for item in detail['snapshot']['project']['classes']],
             'devices': [key for key in ('cpu', 'gpu') if target.get(key)], **hyperparameters}
+        provenance = {'snapshot_sha256': hashlib.sha256(json.dumps(detail['snapshot'], sort_keys=True).encode()).hexdigest(),
+            'partition': selected, 'config': model_config, 'base_model': job['base_model'], 'split_seed': 42}
+        with database() as db: db.execute('UPDATE training_jobs SET provenance=? WHERE id=?', (json.dumps(provenance), job_id))
         manifest = {'job_id': job_id, 'annotation_type': job['task_type'], 'base_model': job['base_model'],
             'run_name': job['run_name'] or job_id, 'hyperparameters': hyperparameters, 'config': model_config,
             'devices': model_config['devices'], 'dataset_name': detail['name']}
         if caps.get('async_jobs'):
-            while True:
-                try:
-                    response = httpx.get(f'{agent}/api/v1/jobs/{job_id}', timeout=10)
-                    if response.status_code == 404:
-                        response = httpx.post(f'{agent}/api/v1/jobs', data={'manifest': json.dumps(manifest)},
-                            files={'dataset': (f"{detail['name']}.zip", archive, 'application/zip')}, timeout=120)
-                    response.raise_for_status(); break
-                except httpx.HTTPStatusError:
-                    raise
-                except httpx.RequestError:
-                    time.sleep(2)  # Retry by ID: a lost acceptance response must not duplicate training.
-            while True:
-                try:
-                    response = httpx.get(f'{agent}/api/v1/jobs/{job_id}', timeout=10)
+            def accepted():
+                response = httpx.get(f'{agent}/api/v1/jobs/{job_id}', timeout=10)
+                if response.status_code == 404:
+                    with database() as db: state = db.execute('SELECT status FROM training_jobs WHERE id=?', (job_id,)).fetchone()['status']
+                    if state == 'cancelling': raise CancelledWork()
+                    archive.seek(0)
+                    response = httpx.post(f'{agent}/api/v1/jobs', data={'manifest': json.dumps(manifest)},
+                        files={'dataset': (f"{detail['name']}.zip", archive, 'application/zip')}, timeout=120)
+                response.raise_for_status()
+            reconnect(accepted, waiting)
+            def state_request():
+                response = httpx.get(f'{agent}/api/v1/jobs/{job_id}', timeout=10)
+                response.raise_for_status()
+                value = response.json()
+                with database() as db: intent = db.execute('SELECT status FROM training_jobs WHERE id=?', (job_id,)).fetchone()['status']
+                if intent == 'cancelling' and value['status'] in ('queued', 'running', 'cancelling'):
+                    response = httpx.post(f'{agent}/api/v1/jobs/{job_id}/cancel', timeout=10)
                     response.raise_for_status(); value = response.json()
-                    _persist_progress(job_id, value)
-                    if value['status'] == 'failed': raise RuntimeError(value.get('error') or 'Agent job failed')
-                    if value['status'] == 'succeeded':
-                        response = httpx.get(f'{agent}/api/v1/jobs/{job_id}/result', timeout=120)
-                        response.raise_for_status(); result = response.json(); break
-                except httpx.HTTPError as error:
-                    # A transient disconnect does not cancel compute or change the run's outcome.
-                    with database() as db: db.execute("UPDATE training_jobs SET phase='reconnecting',error=? WHERE id=?",
-                        (f'Waiting for agent: {error}'[:2000], job_id))
+                return value
+            while True:
+                value = reconnect(state_request, waiting)
+                _persist_progress(job_id, value)
+                if value['status'] == 'cancelled': raise CancelledWork()
+                if value['status'] == 'failed': raise RuntimeError(value.get('error') or 'Agent job failed')
+                if value['status'] == 'succeeded':
+                    def result_request():
+                        response = httpx.get(f'{agent}/api/v1/jobs/{job_id}/result?binary=true', timeout=120)
+                        response.raise_for_status(); result = response.json()
+                        if 'content_base64' not in result['artifact']:
+                            download = DATA / 'training' / f'{job_id}.download'
+                            download.parent.mkdir(parents=True, exist_ok=True)
+                            with httpx.stream('GET', f'{agent}/api/v1/jobs/{job_id}/artifact', timeout=120) as incoming:
+                                incoming.raise_for_status()
+                                with download.open('wb') as output:
+                                    for chunk in incoming.iter_bytes(): output.write(chunk)
+                            result['artifact']['_downloaded_path'] = str(download)
+                        return result
+                    result = reconnect(result_request, waiting)
+                    break
                 time.sleep(2)
         else:
             # Compatibility with agents predating the asynchronous job protocol.
@@ -268,10 +283,13 @@ def _run(job_id):
                 if isinstance(message, str): raise RuntimeError(message)
             response.raise_for_status(); result = response.json()
         _finish(job, result, model_config)
+    except CancelledWork:
+        with database() as db: db.execute("UPDATE training_jobs SET status='cancelled',phase='cancelled',error='',completed_at=? WHERE id=?", (datetime.now(timezone.utc).isoformat(), job_id))
     except Exception as error:
         with database() as db: db.execute("UPDATE training_jobs SET status='failed',phase='failed',error=?,completed_at=? WHERE id=?",
             (str(error)[:2000], datetime.now(timezone.utc).isoformat(), job_id))
     finally:
+        if 'archive' in locals() and hasattr(archive, 'close'): archive.close()
         with _running_lock: _running.discard(job_id)
 
 
@@ -280,6 +298,7 @@ def _job(row):
     item["compute_target"] = json.loads(item["compute_target"]); item["metrics"] = json.loads(item["metrics"])
     item["logs"] = json.loads(item["logs"]); item["latest_metric"] = json.loads(item["latest_metric"])
     item["dataset_partition"] = json.loads(item["dataset_partition"]); item["effective_config"] = json.loads(item["effective_config"])
+    item["provenance"] = json.loads(item["provenance"])
     item["artifact_available"] = bool(item.pop("artifact_path"))
     if item["mlflow_run_id"]:
         experiment_id, run_id = (item["mlflow_run_id"].split(":", 1)
@@ -315,6 +334,8 @@ def create_job(project_id: str, payload: JobCreate):
                          if item.get("available") and item.get("task") == project["annotation_type"])
         if payload.base_model not in installed: raise HTTPException(422, "Selected model is not installed on this compute agent")
         if target["gpu"] and not caps["gpu"]["available"]: raise HTTPException(422, caps["gpu"].get("reason", "GPU unavailable"))
+        if payload.parent_job_id and not db.execute('SELECT 1 FROM training_jobs WHERE id=? AND project_id=?', (payload.parent_job_id, project_id)).fetchone():
+            raise HTTPException(404, 'Parent run not found in this project')
         job_id = uuid.uuid4().hex
         slug = re.sub(r"[^a-z0-9]+", "-", project["name"].lower()).strip("-")[:80] or "project"
         prefix = f"{datetime.now(timezone.utc).strftime('%y%m%d')}-{slug}-v"
@@ -326,6 +347,7 @@ def create_job(project_id: str, payload: JobCreate):
         db.execute("""INSERT INTO training_jobs (id,project_id,version_id,task_type,base_model,hyperparameters,
             compute_target,run_name,tensorboard_url,dataset_partition,status) VALUES (?,?,?,?,?,?,?,?,?,?,'queued')""", (job_id, project_id, payload.version_id,
             project["annotation_type"], payload.base_model, json.dumps(payload.hyperparameters), json.dumps(target), run_name, caps.get("tensorboard", {}).get("url", "") if caps.get("tensorboard", {}).get("available") else "", json.dumps(partitions)))
+        db.execute('UPDATE training_jobs SET parent_job_id=? WHERE id=?', (payload.parent_job_id, job_id))
         row = db.execute("SELECT * FROM training_jobs WHERE id=?", (job_id,)).fetchone()
     with database() as db:
         db.execute('UPDATE training_jobs SET logs=? WHERE id=?', (json.dumps([{'time': datetime.now(timezone.utc).isoformat(), 'message': 'Queued; training continues independently of this page'}]), job_id))
@@ -340,3 +362,43 @@ def artifact(project_id: str, job_id: str):
     if not row or not row["artifact_path"] or not Path(row["artifact_path"]).is_file(): raise HTTPException(404, "Model artifact is unavailable")
     path = Path(row["artifact_path"])
     return FileResponse(path, filename=f"{row['run_name'] or job_id}-{path.name}")
+
+
+@router.post('/api/projects/{project_id}/training/jobs/{job_id}/cancel')
+def cancel_job(project_id: str, job_id: str):
+    with database() as db:
+        row = db.execute('SELECT * FROM training_jobs WHERE project_id=? AND id=?', (project_id, job_id)).fetchone()
+        if not row: raise HTTPException(404, 'Training job not found')
+        if row['status'] not in ('queued', 'running', 'cancelling'): return _job(row)
+        agent = _agent_url(json.loads(row['compute_target']))
+        # Record cancellation intent before contacting the agent, including before submission.
+        db.execute("UPDATE training_jobs SET status='cancelling',phase='cancelling' WHERE id=?", (job_id,))
+    try:
+        response = httpx.post(f'{agent}/api/v1/jobs/{job_id}/cancel', timeout=10)
+        if response.status_code != 404: response.raise_for_status()
+    except httpx.HTTPError as error:
+        raise HTTPException(502, 'Cancellation requested; agent is unreachable. Retry cancellation.') from error
+    return {'id': job_id, 'status': 'cancelling'}
+
+
+class PreviewRequest(JobCreate):
+    seed: int = Field(default=42, ge=0, le=2**31-1)
+
+
+@router.post('/api/projects/{project_id}/augmentation-preview')
+def augmentation_preview(project_id: str, payload: PreviewRequest):
+    detail = version_detail(project_id, payload.version_id)
+    snapshot = detail['snapshot']
+    selected = partition(snapshot)['train']
+    image = next((row for row in snapshot['images'] if row['id'] in selected), None)
+    if image is None: raise HTTPException(422, 'No training sample available')
+    config = {'dataset_path': '/preview/dataset.zip', 'output_path': '/preview',
+        'class_names': [c['name'] for c in snapshot['project']['classes']], 'project_id': project_id,
+        'dataset_version_id': payload.version_id, **payload.hyperparameters}
+    agent = _agent_url(payload.compute.model_dump())
+    with (DATA / 'versions' / project_id / payload.version_id / image['stored_name']).open('rb') as stream:
+        try:
+            response = httpx.post(f'{agent}/api/v1/augmentation-preview', data={'manifest': json.dumps({'base_model': payload.base_model, 'config': config, 'seed': payload.seed, 'boxes': image['boxes']})}, files={'image': ('sample.png', stream, 'image/png')}, timeout=60)
+            response.raise_for_status()
+        except httpx.HTTPError as error: raise HTTPException(422, f'Preview unavailable on selected agent: {error}') from error
+    return response.json() | {'source_path': image['source_path']}

@@ -185,7 +185,7 @@ def authorize(request: Request, user=Depends(current_user)):
     project_id = request.path_params.get('project_id')
     if project_id:
         path = request.url.path
-        needed = 'read' if request.method in ('GET','HEAD') or path.endswith('/export') or path.endswith('/evaluation') else 'write'
+        needed = 'read' if request.method in ('GET','HEAD') or path.endswith('/export') else 'write'
         if request.method == 'DELETE' and path == f'/api/projects/{project_id}' or path.endswith('/merge') and '/classes/' not in path:
             needed = 'owner'
         request.state.access = require_repository(user, project_id, needed)

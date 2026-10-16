@@ -280,8 +280,8 @@ def test_evaluation_metrics_failures_and_unlabelled_anomaly_scores(tmp_path):
     result = evaluate({'annotation_type': 'anomaly_detection', 'base_model': 'colour-distance-anomaly-v1'}, root,
         lambda **values: None, None, None)
     assert result['metrics']['flagged_fraction'] == 1
-    assert result['sample_count'] == 105 and len(result['predictions']) == 100
-    assert result['failure_examples'] == [] and len(result['flagged_examples']) == 50
+    assert result['sample_count'] == 105 and len(result['predictions']) == 105
+    assert result['failure_examples'] == [] and len(result['flagged_examples']) == 105
     assert 'accuracy' not in result['metrics']
 
 
@@ -290,3 +290,22 @@ def test_detection_iou_matches_boxes_by_class():
     assert iou([0, 0, 10, 10], [0, 0, 10, 10]) == 1
     assert iou([0, 0, 10, 10], [20, 20, 10, 10]) == 0
     assert round(iou([0, 0, 10, 10], [5, 0, 10, 10]), 5) == round(1 / 3, 5)
+
+
+def test_augmentation_preview_uses_real_transform_and_preserves_seed(tmp_path, monkeypatch):
+    from pathlib import Path
+    import torch
+    from preview import preview
+    root = Path(__file__).resolve().parents[2] / 'tests'
+    monkeypatch.syspath_prepend(str(root))
+    from pytorch_detection.config import DetectionConfig
+    workbench = {'path': str(root / 'pytorch_detection'), 'task': 'object_detection'}
+    manifest = {'base_model': 'demo', 'seed': 42, 'boxes': [{'x': 1, 'y': 1, 'width': 2, 'height': 3, 'category_id': 1}], 'config': {
+        'dataset_path': '/dataset.zip', 'output_path': '/output', 'project_id': 'p', 'dataset_version_id': 'v', 'class_names': ['cat'], 'augmentations': {'flip': 'horizontal', 'flip_probability': 1}}}
+    class Model: config_type = DetectionConfig
+    raw = io.BytesIO(); Image.new('RGB', (8, 8)).save(raw, 'PNG')
+    state = torch.random.get_rng_state().clone()
+    first = preview(manifest, io.BytesIO(raw.getvalue()), lambda _: workbench, lambda _: Model)
+    second = preview(manifest, io.BytesIO(raw.getvalue()), lambda _: workbench, lambda _: Model)
+    assert first == second and torch.equal(torch.random.get_rng_state(), state)
+    assert first['boxes'][0]['x'] == 5 and first['boxes'][0]['width'] == 2

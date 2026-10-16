@@ -1,10 +1,14 @@
 """Portable compute agent. Deploy this same container on CPU or GPU hosts."""
 import base64
+import hashlib
+import platform
+import importlib.metadata
 import json
 import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import zipfile
 import uuid
@@ -14,6 +18,7 @@ from contextlib import asynccontextmanager
 import jobs as agent_jobs
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from PIL import Image, ImageStat
+from fastapi.responses import FileResponse
 from ai_interfaces import AnomalyModelConfig, BaseModelConfig, DatasetVersion, TrainingContext
 from pydantic import Field
 from workbenches import discover_workbenches, find_workbench, load_model
@@ -83,7 +88,7 @@ def capabilities():
             "reason": "GPU runtime is not exposed to this agent" if not gpu else "GPU runtime detected"},
             "models": MODELS, "workbenches": discover_workbenches(),
             "tensorboard": {"available": bool(TENSORBOARD_URL), "url": TENSORBOARD_URL},
-            "async_jobs": True, "workspace_root": os.environ.get("TRAINING_WORKSPACES_ROOT", "/workspaces")}
+            "capacity": agent_jobs.capacity(), "async_jobs": True, "workspace_root": os.environ.get("TRAINING_WORKSPACES_ROOT", "/workspaces")}
 
 
 def _classification(coco, root):
@@ -149,7 +154,22 @@ def train(manifest: str = Form(...), dataset: UploadFile = File(...)):
     return train_model(manifest, dataset)
 
 
-def train_model(manifest, dataset, report=None):
+def file_digest(path):
+    with path.open('rb') as stream: return hashlib.file_digest(stream, 'sha256').hexdigest()
+
+
+def workbench_digest(workbench):
+    if not workbench or not workbench.get("path"): return None
+    root = Path(workbench['path'])
+    digest = hashlib.sha256()
+    for path in sorted([*root.rglob('*.py'), root / 'ai-workbench.json']):
+        if path.is_file():
+            digest.update(str(path.relative_to(root)).encode())
+            with path.open('rb') as stream: digest.update(hashlib.file_digest(stream, 'sha256').digest())
+    return digest.hexdigest()
+
+
+def train_model(manifest, dataset, report=None, binary=False):
     try: config = json.loads(manifest)
     except json.JSONDecodeError as exc: raise HTTPException(422, "Invalid training manifest") from exc
     task = config.get("annotation_type"); model_key = config.get("base_model")
@@ -182,6 +202,10 @@ def train_model(manifest, dataset, report=None):
         files = list((work / "dataset" / "annotations").glob("*.json"))
         if len(files) != 1: raise HTTPException(422, "Dataset must contain one COCO annotation file")
         coco = json.loads(files[0].read_text())
+        if not model_class and task != 'anomaly_detection':
+            fitting = {record['id'] for record in coco['images'] if record.get('split', 'train') == 'train'}
+            coco['images'] = [record for record in coco['images'] if record['id'] in fitting]
+            coco['annotations'] = [record for record in coco.get('annotations', []) if record['image_id'] in fitting]
         if report: report(phase="training", message=f"Training on {len(coco['images'])} images")
         if model_class:
             output = RUNS_ROOT / run_name
@@ -197,9 +221,9 @@ def train_model(manifest, dataset, report=None):
             if not artifact_path.is_file() or artifact_path.stat().st_size > 512 * 1024 * 1024:
                 raise HTTPException(422, "Workbench artifact is missing or exceeds 512 MiB")
             artifact = {"filename": artifact_path.name, "media_type": result.artifact.media_type,
-                        "content_base64": base64.b64encode(artifact_path.read_bytes()).decode()}
+                        **({'local_path': str(artifact_path)} if binary else {'content_base64': base64.b64encode(artifact_path.read_bytes()).decode()})}
             # Keep event files for live/history dashboards; the Studio stores the final artifact.
-            artifact_path.unlink()
+            if not binary: artifact_path.unlink()
             metrics, summary = dict(result.metrics), result.summary
         else:
             payload, metrics = (_anomaly(coco, work / "dataset", model_config) if task == "anomaly_detection" else _classification(coco, work / "dataset") if task == "image_classification"
@@ -210,8 +234,12 @@ def train_model(manifest, dataset, report=None):
                         "content_base64": base64.b64encode(json.dumps(payload, indent=2).encode()).decode()}
             summary = "Reference model trained successfully"
         if report: report(phase="saving", metrics=metrics, message="Saving trained model")
-        return {"status": "succeeded", "metrics": metrics, "artifact": artifact, "summary": summary, "config": effective.model_dump(mode="json")}
-    except HTTPException:
+        return {"status": "succeeded", "metrics": metrics, "artifact": artifact, "summary": summary, "config": effective.model_dump(mode="json"), "provenance": {
+            "python": platform.python_version(), "platform": platform.platform(),
+            "packages": {name: importlib.metadata.version(name) for name in ('fastapi', 'Pillow', 'ai-infra-interfaces')},
+            "dataset_sha256": file_digest(archive),
+            "workbench_sha256": workbench_digest(workbench)}}
+    except (HTTPException, agent_jobs.Cancelled):
         raise
     except Exception as exc:
         raise HTTPException(500, f"Training failed: {type(exc).__name__}: {exc}") from exc
@@ -220,7 +248,7 @@ def train_model(manifest, dataset, report=None):
 
 def execute_training(manifest, directory, report):
     with (directory / "dataset.zip").open("rb") as stream:
-        return train_model(json.dumps(manifest), UploadFile(filename="dataset.zip", file=stream), report)
+        return train_model(json.dumps(manifest), UploadFile(filename="dataset.zip", file=stream), report, binary=True)
 
 
 def execute_evaluation(manifest, directory, report):
@@ -239,7 +267,7 @@ def request_manifest(manifest):
 @app.post("/api/v1/jobs", status_code=202)
 def submit_job(manifest: str = Form(...), dataset: UploadFile = File(...)):
     value = request_manifest(manifest); value["kind"] = "training"
-    return agent_jobs.start(jobs_root(), value["job_id"], value, dataset.file.read(), execute_training)
+    return agent_jobs.start(jobs_root(), value["job_id"], value, dataset.file, execute_training)
 
 
 @app.get("/api/v1/jobs/{job_id}")
@@ -249,12 +277,45 @@ def job_status(job_id: str):
 
 
 @app.get("/api/v1/jobs/{job_id}/result")
-def job_result(job_id: str):
+def job_result(job_id: str, binary: bool = False):
     job_status(job_id)
-    return agent_jobs.result(jobs_root(), job_id)
+    return agent_jobs.result(jobs_root(), job_id, binary=binary)
 
 
 @app.post("/api/v1/evaluations", status_code=202)
 def submit_evaluation(manifest: str = Form(...), dataset: UploadFile = File(...), artifact: UploadFile = File(...)):
     value = request_manifest(manifest); value["kind"] = "evaluation"
-    return agent_jobs.start(jobs_root(), value["job_id"], value, dataset.file.read(), execute_evaluation, artifact.file.read())
+    return agent_jobs.start(jobs_root(), value["job_id"], value, dataset.file, execute_evaluation, artifact.file)
+
+
+@app.post("/api/v1/jobs/{job_id}/cancel")
+def cancel_job(job_id: str):
+    job_status(job_id)
+    return agent_jobs.cancel(jobs_root(), job_id)
+
+
+@app.get('/api/v1/jobs/{job_id}/artifact')
+def job_artifact(job_id: str):
+    job_status(job_id)
+    agent_jobs.result(jobs_root(), job_id, binary=True)
+    path = jobs_root() / job_id / 'model.bin'
+    if not path.is_file(): raise HTTPException(404, 'Artifact unavailable')
+    return FileResponse(path, media_type='application/octet-stream')
+
+
+@app.post('/api/v1/augmentation-preview')
+def augmentation_preview(manifest: str = Form(...), image: UploadFile = File(...)):
+    try:
+        value = json.loads(manifest)
+        if not isinstance(value, dict): raise ValueError('Manifest must be an object')
+        with tempfile.TemporaryDirectory(prefix='augmentation-preview-') as temporary:
+            root = Path(temporary)
+            (root / 'manifest.json').write_text(json.dumps(value))
+            with (root / 'image').open('wb') as output:
+                shutil.copyfileobj(image.file, output)
+            if (root / 'image').stat().st_size > 50 * 1024 * 1024: raise ValueError('Image exceeds 50 MiB')
+            result = subprocess.run([sys.executable, str(Path(__file__).with_name('preview.py')), str(root)], capture_output=True, text=True, timeout=60)
+            if result.returncode: raise ValueError(result.stderr[-1500:])
+            return json.loads(result.stdout)
+    except (ValueError, subprocess.SubprocessError) as error:
+        raise HTTPException(422, f'Invalid augmentation preview: {error}') from error

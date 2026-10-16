@@ -87,6 +87,11 @@ def test_mysql_users_teams_and_repository_permissions(tmp_path, monkeypatch):
             assert alice.get(f'/api/projects/{pid}/access').status_code==403
             assert alice.post(f'/api/projects/{pid}/publish').status_code==403
             assert alice.post(f'/api/projects/{pid}/training/jobs',json={}).status_code==403
+            for suffix in ('models/missing/evaluation', 'models/missing/evaluation/cancel', 'models/missing/review-tasks', 'imports/preview', 'augmentation-preview', 'training/jobs/missing/cancel'):
+                assert alice.post(f'/api/projects/{pid}/{suffix}', json={}).status_code == 403
+            assert alice.put(f'/api/projects/{pid}/review-tasks/missing', json={'status':'open'}).status_code == 403
+            for suffix in ('readiness', 'review-tasks', 'activity'):
+                assert alice.get(f'/api/projects/{pid}/{suffix}').status_code == 200
             assert admin.put(f'/api/projects/{pid}/access',json={'kind':'user','subject_id':ids['alice'],'permission':'write'}).status_code==200
             assert alice.get(f'/api/projects/{pid}').json()['permission']=='write'
             assert alice.put(f'/api/projects/{pid}',json={'name':'Editable'}).status_code==200

@@ -135,3 +135,13 @@ Set **Default train split (%)** in Manage, then publish from Dashboard. Publishi
 Train a published version using the bundled **Colour distance anomaly baseline**, or an installed `anomaly_detection` workbench. The baseline fits mean RGB features and a score threshold using only training images, then reports held-out anomaly scores and the flagged fraction. Its downloadable JSON artifact contains the centroid, threshold, feature recipe, and configuration. This is a pipeline demo, not a production anomaly detector. With unlabelled test data, the metrics do not claim detection accuracy. Prepare representative normal training data for normality-based models. A zero-sized training partition cannot be trained.
 
 Anomaly jobs use the existing local/remote compute, MLflow tracking, artifact download, model registration, and lineage flows. Custom implementations can use `AnomalyDetectionModel` and `AnomalyModelConfig` from `ai_interfaces` (empty `class_names`). Use the published `ai-interfaces-v0.3.0` contracts or install this checkout with `pip install -e libs/ai_interfaces`. They must respect the frozen `split` on each manifest image; held-out test samples must not enter fitting or threshold calibration.
+
+Run the complete development verification with `tests/.venv/bin/python tools/verify.py` after installing the Python dependencies in tests/requirements.txt and backend/requirements-dev.txt. Set `AUTH_TEST_SETTINGS` to an isolated MySQL database configuration to include identity integration tests; CI supplies one.
+
+## Workflow enhancements in this checkout
+
+New publications freeze supervised fitting/validation/test membership. Training supports capacity-limited agents, cooperative cancellation, parent-linked cloning, reproducibility records and compatible saved-model comparison. Evaluation retains full examples with pagination and filters; anomaly thresholds can be explored without changing saved metrics. Send supervised failures into an assignable review queue and publish a new dataset after corrections.
+
+Use Explore for metadata and duplicate filters, Dashboard for readiness and annotation import mappings, and the image picker for selective import previews with failed-file retry. Training can preview an installed workbench's augmentations with a seed and transformed boxes. Lineage supports search, collapsed stages and ancestry selection; Activity attributes project mutations to users.
+
+See [the enhancement branch stack](docs/enhancement-stack.md), [training details](docs/training-jobs-and-evaluation.md), and [backup/restore](docs/migration.md). These source features are not a new published platform release.

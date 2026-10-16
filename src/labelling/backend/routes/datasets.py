@@ -1,5 +1,7 @@
 from fastapi import APIRouter
-from common import *
+from common import (
+    AnnotationSave, BackgroundTask, BatchCreate, DATA, ExportRequest, File, FileResponse, HTTPException, Image, MAX_UPLOAD, Path, PurePosixPath, UploadFile, ValidationError, _safe_zip_members, database, datetime, get_project, hamming, io, json, math, os, perceptual_hash, random, re, tempfile, timezone, zipfile
+)
 from common import _safe_zip_members
 from routes.images import upload_image, create_batch, save_annotations
 
@@ -361,3 +363,57 @@ def export_project(project_id: str, payload: ExportRequest):
         raise
     return FileResponse(temp_path, media_type='application/zip', filename=f'{archive_name}.zip',
                         background=BackgroundTask(lambda: Path(temp_path).unlink(missing_ok=True)))
+
+
+@router.get('/api/projects/{project_id}/readiness')
+def readiness(project_id: str):
+    from services.partitions import freeze, partition
+    with database() as db:
+        project = get_project(db, project_id)
+        rows = db.execute('SELECT * FROM images WHERE project_id=? ORDER BY source_path,id', (project_id,)).fetchall()
+    ready = [row for row in rows if row['completed']]
+    snapshot = {'project': project, 'images': [dict(row) for row in ready]}
+    freeze(snapshot)
+    counts = {key: len(value) for key, value in partition(snapshot).items() if isinstance(value, list)}
+    checks = []
+    def check(code, count, severity, message, tab):
+        if count: checks.append(dict(code=code, count=count, severity=severity, message=message, tab=tab))
+    check('empty', not ready, 'error', 'Import and complete samples before publishing.', 'images' if project['annotation_type'] == 'anomaly_detection' else 'annotate')
+    check('train_empty', not counts['train'], 'error', 'The fitting partition is empty. Adjust the split in Settings.', 'settings')
+    check('test_empty', not counts['test'], 'warning', 'No held-out evaluation samples. Adjust the split in Settings.', 'settings')
+    if project['annotation_type'] != 'anomaly_detection':
+        check('incomplete', len(rows) - len(ready), 'warning', 'Unfinished samples are excluded from publication.', 'annotate')
+        check('unreviewed', sum(row['review_status'] != 'approved' for row in ready), 'warning', 'Completed samples still need review.', 'review')
+    for issue in quality(project_id)['issues']:
+        checks.append({'code': issue['code'], 'count': issue['count'], 'severity': issue['severity'], 'message': issue['detail'], 'tab': 'stats'})
+    return {'can_publish': bool(ready) and bool(counts['train']), 'samples': len(rows), 'published_samples': len(ready), 'partitions': counts, 'checks': checks}
+
+
+@router.post('/api/projects/{project_id}/annotations/preview')
+def preview_annotations(project_id: str, file: UploadFile = File(...)):
+    from services.import_validation import _validate_import_document
+    raw = file.file.read(MAX_UPLOAD + 1)
+    if len(raw) > MAX_UPLOAD: raise HTTPException(413, 'Import must be at most 50 MiB')
+    try:
+        if (file.filename or '').lower().endswith('.json'):
+            documents = [(file.filename, json.loads(raw))]
+        else:
+            with zipfile.ZipFile(io.BytesIO(raw)) as bundle:
+                documents = [(member.filename, json.loads(bundle.read(member))) for member in _safe_zip_members(bundle) if member.filename.endswith('.json')]
+        if not documents: raise HTTPException(422, 'Preview supports COCO JSON or a ZIP containing COCO JSON')
+        with database() as db:
+            project = get_project(db, project_id)
+            rows = db.execute('SELECT * FROM images WHERE project_id=?', (project_id,)).fetchall()
+        mappings = []; samples = []
+        for name, document in documents:
+            _validate_import_document(document, name)
+            target = {category['name'].casefold(): category for category in project['classes']}
+            for category in document['categories']:
+                mapped = target.get(category['name'].casefold())
+                mappings.append({'source': category['name'], 'target': mapped['name'] if mapped else None})
+            for image in document['images']:
+                matched = _match_image(rows, image['file_name'])
+                samples.append({'source_path': image['file_name'], 'status': 'matched' if matched else 'new image required'})
+        return {'class_mapping': mappings, 'samples': samples, 'can_import': all(item['target'] for item in mappings)}
+    except (ValueError, KeyError, TypeError, zipfile.BadZipFile) as error:
+        raise HTTPException(422, f'Invalid annotation import: {error}') from error

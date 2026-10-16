@@ -11,7 +11,7 @@ import pymysql
 import ai_labelling
 import common
 import auth
-from common import *  # Re-export stable helpers used by tests and local tooling.
+from common import MAX_UPLOAD, DATA, init_db, database, get_project, get_image, image_json
 from routes import comparison, datasets, images, lineage, projects, training, versions, models
 
 
@@ -34,6 +34,13 @@ app = FastAPI(title='Labelling API', lifespan=lifespan)
 @app.middleware('http')
 async def private_api_responses(request, call_next):
     response = await call_next(request)
+    if request.method in ('POST', 'PUT', 'PATCH', 'DELETE') and response.status_code < 400:
+        project_id = request.path_params.get('project_id')
+        user = getattr(request.state, 'user', None)
+        if project_id and user:
+            with database() as db:
+                db.execute('INSERT INTO project_activity(project_id,actor,action) VALUES (?,?,?)',
+                    (project_id, user['username'], request.method + ' ' + request.url.path))
     if request.url.path.startswith('/api/'):
         response.headers['Cache-Control'] = 'no-store'
         response.headers['Vary'] = 'Cookie'

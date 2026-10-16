@@ -1,0 +1,36 @@
+name: Verification
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: integration-password
+          MYSQL_DATABASE: ai_infra_test
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -pintegration-password"
+          --health-interval=10s --health-timeout=5s --health-retries=12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: python -m pip install -r tests/requirements.txt -r src/labelling/backend/requirements-dev.txt
+      - name: Configure isolated identity database
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          path = Path(os.environ['RUNNER_TEMP']) / 'auth-test.json'
+          path.write_text(json.dumps({'AUTH_MYSQL_HOST':'127.0.0.1','AUTH_MYSQL_PORT':'3306','AUTH_MYSQL_DATABASE':'ai_infra_test','AUTH_MYSQL_USER':'root','AUTH_MYSQL_PASSWORD':'integration-password'}))
+          with open(os.environ['GITHUB_ENV'], 'a') as f: f.write(f'AUTH_TEST_SETTINGS={path}\n')
+          PY
+      - run: python tools/verify.py

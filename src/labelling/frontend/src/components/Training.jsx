@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useState, useId, useRef } from "react";
+import RunComparison from "./RunComparison";
+import AugmentationPreview from "./AugmentationPreview";
 import ModelEvaluation from "./ModelEvaluation";
 import { elapsedTime, heartbeatText } from "../training-status";
 import TrainingErrorDialog from "./TrainingErrorDialog";
@@ -50,6 +52,7 @@ export default function Training({ project, initialModelId = "" }) {
   const [savedModels, setSavedModels] = useState([]);
   const [viewModel, setViewModel] = useState(null);
   const [clock, setClock] = useState(Date.now());
+  const [parentRun, setParentRun] = useState(null);
   const [retryConfig, setRetryConfig] = useState(null);
   const [versions, setVersions] = useState([]); const [jobs, setJobs] = useState([]);
   const [caps, setCaps] = useState(null); const [version, setVersion] = useState("");
@@ -114,6 +117,7 @@ export default function Training({ project, initialModelId = "" }) {
     if (selectedModel && configuredModel.current !== model) { configuredModel.current = model; setParams(retryConfig?.base_model === model ? retryConfig.hyperparameters : schemaDefaults(selectedModel)); setRetryConfig(null); }
   }, [model, selectedModel]);
   function cloneJob(job) {
+    setParentRun(job);
     setVersion(job.version_id); setKind(job.compute_target.kind); setEndpoint(job.compute_target.endpoint || "");
     setCpu(job.compute_target.cpu); setGpu(job.compute_target.gpu);
     if (job.base_model === model) setParams(job.hyperparameters);
@@ -131,7 +135,7 @@ export default function Training({ project, initialModelId = "" }) {
     e.preventDefault(); setBusy(true); setError("");
     try { const hyperparameters = normalizeParams(params, selectedModel);
       await api(`/projects/${project.id}/training/jobs`, { method: "POST", body: JSON.stringify({
-      version_id: version, base_model: model, hyperparameters,
+      parent_job_id: parentRun?.id || null, version_id: version, base_model: model, hyperparameters,
       compute: { kind, cpu: kind === "local" ? cpu : true, gpu: kind === "local" ? gpu : false, endpoint },
     }) }); await refreshJobs(); } catch (e) { setTrainingErrors((current) => [...current, { message: e.message || "Training could not be started." }]); } finally { setBusy(false); }
   }
@@ -142,6 +146,7 @@ export default function Training({ project, initialModelId = "" }) {
       </div>
     {error && <div className="alert">{error}</div>}
     <form className="panel training-form" onSubmit={submit}><fieldset className="training-fields" disabled={project.permission === "read"}>
+      {parentRun && <aside className="notice"><strong>Cloned from {parentRun.run_name || parentRun.id}</strong><p>A new run will retain its parent. Review changes before starting.</p><pre>{JSON.stringify({ datasetChanged: version !== parentRun.version_id, modelChanged: model !== parentRun.base_model, original: parentRun.hyperparameters, proposed: params }, null, 2)}</pre><button type="button" onClick={() => setParentRun(null)}>Detach parent</button></aside>}
       <section><div className="eyebrow">DATA &amp; MODEL</div>
         <div className="training-grid"><label>Published version<select value={version} required onChange={(e) => setVersion(e.target.value)}>
           <option value="">Select a version</option>{versions.map((v) => <option key={v.id} value={v.id}>{v.name} · {v.sample_count} samples</option>)}</select></label>
@@ -150,6 +155,7 @@ export default function Training({ project, initialModelId = "" }) {
             return <option key={m.key} value={m.key} disabled={disabled}>{m.workspace || "Bundled"} / {m.name}{disabled ? ` - ${m.available === false ? "unavailable" : m.task.replaceAll("_", " ")}` : ""}</option>;
           })}</select></label></div>
         {selectedModel && <p className="muted">{selectedModel.description}{selectedModel.path ? ` · ${selectedModel.path}` : ""}</p>}
+        {template && <p className="notice">Frozen membership: {Object.entries(template.partitions || {}).map(([key, count]) => `${count} ${key}`).join(" · ")}</p>}
         {template && <details className="run-template"><summary>Prefilled run configuration</summary>
           <dl><div><dt>Dataset</dt><dd>{template.dataset_path}</dd></div>
             <div><dt>Classes</dt><dd>{template.class_names.join(", ")}</dd></div>
@@ -168,9 +174,10 @@ export default function Training({ project, initialModelId = "" }) {
             {fields.map(([key, schema]) => <ConfigField key={key} name={key} schema={schema} value={params[key]} required={selectedModel.config_schema.required?.includes(key)}
               onChange={(value) => setParams((current) => ({ ...current, [key]: value }))} />)}</div>;
         })}
+        {selectedModel?.config_schema?.properties?.augmentations && <AugmentationPreview project={project} request={() => ({ version_id: version, base_model: model, hyperparameters: normalizeParams(params, selectedModel), compute: { kind, cpu, gpu, endpoint } })} />}
         {!selectedModel?.config_schema && <p className="muted">This model does not expose a configurable Pydantic schema.</p>}
       </section>
-      <section><div className="eyebrow">COMPUTE TARGET</div><div className="compute-choice">
+      <section><div className="eyebrow">COMPUTE TARGET</div>{caps?.capacity && <p role="status">Agent capacity: {caps.capacity.running} running · {caps.capacity.queued} queued · limit {caps.capacity.limit} simultaneous jobs</p>}<div className="compute-choice">
         <label className={`compute-card ${kind === 'local' ? 'selected' : ''}`}><input type="radio" name="target" checked={kind === 'local'} onChange={() => { setKind('local'); load(); }} /><span><strong>Local agent</strong><small>Bundled with this Compose stack</small></span></label>
         <label className={`compute-card ${kind === 'remote' ? 'selected' : ''}`}><input type="radio" name="target" checked={kind === 'remote'} onChange={() => { setKind("remote"); setCaps(null); setProbe(""); }} /><span><strong>Remote agent</strong><small>Connect to another machine by IP</small></span></label></div>
         {kind === "local" ? <div className="device-row">
@@ -179,25 +186,29 @@ export default function Training({ project, initialModelId = "" }) {
           {!caps?.gpu?.available && <span className="muted small">{caps?.gpu?.reason || "Checking GPU availability…"}</span>}
         </div> : <div className="remote-row"><label>Agent IP address<input value={endpoint} required placeholder="192.168.1.20:8090" onChange={(e) => { setEndpoint(e.target.value); setCaps(null); setProbe(""); }} /></label><button type="button" onClick={testRemote}>Test connection</button><span className="muted">{probe}</span></div>}
       </section>
-      <div className="training-submit"><span className="muted small">{compatibleModels.length} compatible · {models.length - compatibleModels.length} visible but unavailable</span><button className="primary" disabled={busy || !version || !model || (kind === 'local' && !cpu && !gpu)}>{busy ? "Queuing…" : "Start training"}</button></div>
+      <div className="training-submit"><span className="muted small">{compatibleModels.length} compatible · {models.length - compatibleModels.length} visible but unavailable</span><button className="primary" disabled={busy || !version || !model || !selectedModel || (kind === "remote" && !caps) || (kind === 'local' && !cpu && !gpu)}>{busy ? "Queuing…" : "Start training"}</button></div>
     </fieldset></form>
     <div className="page-heading jobs-heading"><div><h2>Training jobs</h2><p className="muted">Compute-agent jobs continue when you refresh or close this page. Status and logs are restored automatically.</p></div><button onClick={refreshJobs}>Refresh status</button></div>
     {!jobs.length ? <div className="empty"><h2>No training jobs yet</h2><p>Publish a dataset version, choose a model, and start your first run.</p></div> :
       <div className="training-job-list">{jobs.map((job) => <article className="panel training-job-card" key={job.id}>
         <header><div><strong>{job.run_name || job.base_model}</strong><p className="muted small">{job.base_model} · {versions.find((value) => value.id === job.version_id)?.name || job.version_id.slice(0, 8)} · {job.compute_target.kind} {job.compute_target.gpu ? "GPU" : "CPU"}</p></div><span className={`job-status ${job.status}`}>{job.status}</span></header>
         <dl className="training-job-facts"><div><dt>Phase</dt><dd>{job.phase || job.status}</dd></div><div><dt>Elapsed</dt><dd>{elapsedTime(job, clock)}</dd></div><div><dt>Heartbeat</dt><dd>{heartbeatText(job, clock)}</dd></div><div><dt>Latest metric</dt><dd>{job.latest_metric?.name ? `${job.latest_metric.name.replaceAll("_", " ")}: ${Number(job.latest_metric.value).toPrecision(4)}` : "Waiting for metrics"}</dd></div></dl>
+        {job.parent_job_id && <p className="muted small">Parent run: {jobs.find((item) => item.id === job.parent_job_id)?.run_name || job.parent_job_id}</p>}
         {job.error && <p className={job.status === "failed" ? "warning-text" : "muted"}>{job.error}</p>}
         <div className="training-job-actions">
+          {project.permission !== "read" && ["queued", "running", "cancelling"].includes(job.status) && <button onClick={async () => { try { await api(`/projects/${project.id}/training/jobs/${job.id}/cancel`, { method: "POST" }); await refreshJobs(); } catch (e) { setError(e.message); } }}>Request cancellation</button>}
           {["queued", "running", "succeeded"].includes(job.status) && liveMetricsEnabled(job.hyperparameters, models.find((item) => item.key === job.base_model)) && dashboardUrl(caps, job) &&
             <a className="button" href={dashboardUrl(caps, job)} target="_blank" rel="noopener noreferrer"><span aria-hidden="true">▥</span> View live metrics</a>}
           {job.artifact_available && <a className="button" href={`/api/projects/${project.id}/training/jobs/${job.id}/artifact`}><span aria-hidden="true">↓</span> Download Model</a>}
           {savedModels.some((item) => item.training_job_id === job.id) && <button onClick={() => setViewModel(savedModels.find((item) => item.training_job_id === job.id))}>View model</button>}
-          {["failed", "succeeded"].includes(job.status) && <button onClick={() => cloneJob(job)}>{job.status === "failed" ? "Retry configuration" : "Clone configuration"}</button>}
+          {["failed", "succeeded", "cancelled"].includes(job.status) && <button onClick={() => cloneJob(job)}>{job.status === "failed" ? "Retry configuration" : "Clone configuration"}</button>}
           {job.mlflow_url && <a className="button" href={job.mlflow_url} target="_blank" rel="noopener noreferrer"><span aria-hidden="true">↗</span> View on MLflow</a>}
         </div>
         <details className="training-job-logs"><summary>Latest logs ({job.logs?.length || 0})</summary><pre aria-label={`Logs for ${job.run_name || job.id}`}>{job.logs?.length ? job.logs.map((line) => `${new Date(line.time).toLocaleTimeString()}  ${line.message}`).join("\n") : "Waiting for agent logs. Older agents only report their final result."}</pre></details>
+        {Object.keys(job.provenance || {}).length > 0 && <details><summary>Reproducibility record</summary><pre>{JSON.stringify(job.provenance, null, 2)}</pre></details>}
         {Object.keys(job.metrics).length > 0 && <details><summary>All metrics</summary><dl className="training-metrics">{Object.entries(job.metrics).map(([key, value]) => <div key={key}><dt>{key.replaceAll("_", " ")}</dt><dd>{Number(value).toPrecision(5)}</dd></div>)}</dl></details>}
       </article>)}</div>}
+    <RunComparison project={project} models={savedModels} />
     <div className="page-heading"><div><h2>Saved models</h2><p className="muted">Open a model to inspect predictions and evaluate its recorded held-out dataset.</p></div></div>
     {!savedModels.length ? <p className="muted">Saved models appear after successful training.</p> : <div className="saved-model-grid">{savedModels.map((item) => <button className="panel saved-model-card" key={item.id} onClick={() => setViewModel(item)}>
       <strong>{item.run_name || item.name}</strong><span className="muted">Model v{item.model_version} · {item.held_out_samples} held-out images</span><span>View predictions ↗</span>

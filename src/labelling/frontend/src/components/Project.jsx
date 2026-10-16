@@ -6,14 +6,20 @@ import Settings from "./Settings";
 import History from "./History";
 import Versions from "./Versions";
 import Editor from "./Editor";
+import Readiness from "./Readiness";
+import ModelReviewQueue from "./ModelReviewQueue";
+import DatasetExplorer from "./DatasetExplorer";
+import ImportStaging from "./ImportStaging";
+import Activity from "./Activity";
+import AnnotationImport from "./AnnotationImport";
 import Dashboard from "./Dashboard";
 import Training from "./Training";
 import Lineage from "./Lineage";
 import VersionComparison from "./VersionComparison";
 
 const sections = [
-  { label: "Label", tabs: [["annotate", "Annotate"], ["review", "Review"]] },
-  { label: "Dataset", tabs: [["stats", "Dashboard"], ["history", "History"], ["versions", "Versions"], ["compare", "Compare"], ["lineage", "Lineage"]] },
+  { label: "Label", tabs: [["annotate", "Annotate"], ["review", "Review"], ["model-review", "Model review"]] },
+  { label: "Dataset", tabs: [["stats", "Dashboard"], ["explore", "Explore"], ["history", "History"], ["versions", "Versions"], ["compare", "Compare"], ["lineage", "Lineage"], ["activity", "Activity"]] },
   { label: "Training", tabs: [["training", "Training"]] },
   { label: "Manage", tabs: [["settings", "Settings"]] },
 ];
@@ -28,6 +34,7 @@ function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
     return projectSections.some((section) => section.tabs.some(([id]) => id === remembered)) ? remembered : anomaly || readOnly ? "stats" : "annotate";
   });
   useEffect(() => { window.sessionStorage.setItem(`studio-project-tab:${project.id}`, tab); }, [project.id, tab]);
+  const [stagedFiles, setStagedFiles] = useState(null);
   const [images, setImages] = useState([]);
   const [index, setIndex] = useState(0);
   const [locked, setLocked] = useState(false);
@@ -81,55 +88,9 @@ function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
     refresh(true);
     return () => onLock(false);
   }, [project.id]);
-  async function upload(e) {
-    const files = [...e.target.files].filter((f) =>
-      /\.(jpe?g|png|webp|bmp|tiff?)$/i.test(f.name),
-    );
-    e.target.value = "";
-    if (!files.length) {
-      setError(
-        "No supported images found. Choose JPEG, PNG, WebP, BMP or TIFF files.",
-      );
-      return;
-    }
-    setUploading(true);
-    lock(true);
-    setError("");
-    const failures = [];
-    let batchId = null;
-    if (images.length) {
-      try {
-        batchId = (await api(`/projects/${project.id}/batches`, {
-          method: "POST", body: JSON.stringify({ kind: "new_additions" }),
-        })).id;
-      } catch (e) {
-        setError(e.message); setUploading(false); lock(false); return;
-      }
-    }
-    for (let i = 0; i < files.length; i++) {
-      setProgress(`Importing ${i + 1} of ${files.length} · ${files[i].name}`);
-      const body = new FormData();
-      body.append(
-        "file",
-        files[i],
-        files[i].webkitRelativePath || files[i].name,
-      );
-      try {
-        await api(`/projects/${project.id}/images${batchId ? `?batch_id=${batchId}` : ""}`, { method: "POST", body });
-      } catch (e) {
-        failures.push(`${files[i].name}: ${e.message}`);
-      }
-    }
-    setProgress(
-      `${files.length - failures.length} of ${files.length} images imported. Reimporting identical files keeps existing progress.`,
-    );
-    if (failures.length)
-      setError(
-        `${failures.length} import(s) failed. ${failures.slice(0, 5).join(" · ")}`,
-      );
-    await refresh(true);
-    setUploading(false);
-    lock(false);
+  function upload(e) {
+    const files = [...e.target.files]; e.target.value = "";
+    if (files.length) setStagedFiles(files);
   }
   async function deleteProject() {
     if (
@@ -200,6 +161,7 @@ function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
           </label>
         </div>
       </div>
+      {stagedFiles && <ImportStaging project={project} files={stagedFiles} onClose={() => setStagedFiles(null)} onImported={() => refresh(true)} />}
       <nav className="project-navigation" aria-label="Project pages">
         <div className="tabs section-tabs">
           {projectSections.map((section) => <button key={section.label} disabled={locked}
@@ -245,8 +207,8 @@ function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
           <button onClick={() => refresh(true)}>Refresh</button>
         </div>
       )}
-      {tab === "stats" ? (
-        <Dashboard project={project} onConfigure={() => setTab("settings")} onPublished={() => setTab("versions")} />
+      {tab === "activity" ? <Activity project={project} /> : tab === "explore" ? <DatasetExplorer project={project} images={images} onEdit={(id) => { setIndex(images.findIndex((image) => image.id === id)); setTab("annotate"); }} /> : tab === "model-review" ? <ModelReviewQueue project={project} onEdit={(id) => { const next = images.findIndex((image) => image.id === id); if (next >= 0) { setIndex(next); setTab("annotate"); } }} /> : tab === "stats" ? (
+        <div className="dataset-dashboard"><div className="dataset-preparation"><Readiness project={project} onNavigate={setTab} />{!anomaly && <AnnotationImport project={project} onImported={() => refresh()} />}</div><Dashboard project={project} onConfigure={() => setTab("settings")} onPublished={() => setTab("versions")} /></div>
       ) : tab === "images" ? (
         <UnlabelledImages project={project} images={reviewImages || images} onDeleted={async (id) => { if (reviewImages) setReviewImages((list) => list.filter((image) => image.id !== id)); await refresh(); }} onClear={reviewImages ? () => setReviewImages(null) : null} />
       ) : tab === "settings" ? (
