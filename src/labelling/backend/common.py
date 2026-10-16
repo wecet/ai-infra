@@ -120,6 +120,10 @@ def init_db():
             status TEXT NOT NULL DEFAULT 'open', assignee TEXT NOT NULL DEFAULT '',
             resolution TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(model_id,image_id))""")
+        db.execute("""CREATE TABLE IF NOT EXISTS project_activity (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT NOT NULL,
+            actor TEXT NOT NULL, action TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
         job_columns = {row['name'] for row in db.execute('PRAGMA table_info(training_jobs)')}
         for column, definition in (
             ('parent_job_id', 'TEXT'),

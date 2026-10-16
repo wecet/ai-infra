@@ -308,7 +308,8 @@ def merge_project(project_id: str, payload: ProjectMerge, request: Request):
                                (json.dumps(revision_boxes), json.dumps(revision_labels), revision['id']))
             db.execute('UPDATE project_comments SET project_id=? WHERE project_id=?', (project_id, source_id))
             db.execute('DELETE FROM model_deployments WHERE project_id=?', (source_id,))
-            db.execute('DELETE FROM model_evaluations WHERE project_id=?', (source_id,))
+            db.execute('DELETE FROM review_tasks WHERE project_id=?', (project_id,))
+        db.execute('DELETE FROM model_evaluations WHERE project_id=?', (source_id,))
             db.execute('DELETE FROM registered_models WHERE project_id=?', (source_id,))
             db.execute('DELETE FROM training_jobs WHERE project_id=?', (source_id,))
             db.execute('DELETE FROM lakefs_commits WHERE project_id=?', (source_id,))
@@ -339,6 +340,7 @@ def delete_project(project_id: str):
                    (project_id,))
         db.execute('DELETE FROM project_comments WHERE project_id=?', (project_id,))
         db.execute('DELETE FROM model_deployments WHERE project_id=?', (project_id,))
+        db.execute('DELETE FROM review_tasks WHERE project_id=?', (project_id,))
         db.execute('DELETE FROM model_evaluations WHERE project_id=?', (project_id,))
         db.execute('DELETE FROM registered_models WHERE project_id=?', (project_id,))
         db.execute('DELETE FROM training_jobs WHERE project_id=?', (project_id,))
@@ -375,3 +377,10 @@ def add_project_comment(project_id: str, payload: CommentCreate, request: Reques
                    (comment_id, project_id, author, body))
         return dict(db.execute('SELECT id,author,body,created_at FROM project_comments WHERE id=?',
                                (comment_id,)).fetchone())
+
+
+@router.get('/api/projects/{project_id}/activity')
+def project_activity(project_id: str, before: int | None = None):
+    with database() as db:
+        get_project(db, project_id)
+        return [dict(row) for row in db.execute('SELECT * FROM project_activity WHERE project_id=? AND id<? ORDER BY id DESC LIMIT 100', (project_id, before if before is not None else 2**63-1))]

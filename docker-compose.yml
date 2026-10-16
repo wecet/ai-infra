@@ -24,6 +24,7 @@ services:
       LAKEFS_BRANCH: ${LAKEFS_BRANCH:-main}
       LAKEFS_STORAGE_NAMESPACE: ${LAKEFS_STORAGE_NAMESPACE:-local://datasets}
       LAKEFS_PUBLIC_URL: http://localhost:${LAKEFS_PORT:-8002}
+      AGENT_RECONNECT_SECONDS: ${AGENT_RECONNECT_SECONDS:-300}
       TRAINING_AGENT_URL: http://training-agent:8090
       MLFLOW_TRACKING_URI: http://mlflow:5000
       MLFLOW_PUBLIC_URL: http://localhost:${MLFLOW_PORT:-5001}
@@ -55,7 +56,6 @@ services:
     image: mysql:8.4
     restart: unless-stopped
     environment:
-      TRAINING_MAX_CONCURRENT_JOBS: ${TRAINING_MAX_CONCURRENT_JOBS:-1}
       MYSQL_DATABASE: ${AUTH_MYSQL_DATABASE:-studio_auth}
       MYSQL_USER: ${AUTH_MYSQL_USER:-studio}
       MYSQL_PASSWORD: ${AUTH_MYSQL_PASSWORD:?Set AUTH_MYSQL_PASSWORD for the user database}
@@ -79,6 +79,7 @@ services:
     image: ${TRAINING_AGENT_IMAGE:-ai-infra/training-agent:local}
     restart: unless-stopped
     environment:
+      TRAINING_MAX_CONCURRENT_JOBS: ${TRAINING_MAX_CONCURRENT_JOBS:-1}
       TRAINING_GPU_AVAILABLE: ${TRAINING_GPU_AVAILABLE:-auto}
       TRAINING_WORKSPACES_ROOT: /workspaces
       TRAINING_RUNS_ROOT: /training-runs

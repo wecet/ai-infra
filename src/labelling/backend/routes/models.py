@@ -178,3 +178,27 @@ def review_tasks(project_id: str):
         get_project(db, project_id)
         rows = db.execute('SELECT t.*,i.source_path FROM review_tasks t LEFT JOIN images i ON i.id=t.image_id AND i.project_id=t.project_id WHERE t.project_id=? ORDER BY t.created_at DESC,t.rowid DESC', (project_id,)).fetchall()
     return [dict(row) | {'prediction': json.loads(row['prediction'])} for row in rows]
+
+
+class TaskUpdate(BaseModel):
+    status: str = Field(pattern='^(open|needs_changes|resolved)$')
+    assignee: str = Field(default='', max_length=100)
+    resolution: str = Field(default='', max_length=2000)
+
+
+@router.put('/api/projects/{project_id}/review-tasks/{task_id}')
+def update_review_task(project_id: str, task_id: str, payload: TaskUpdate):
+    import auth
+    if payload.status in ('needs_changes', 'resolved') and not payload.resolution.strip():
+        raise HTTPException(422, 'Add a reason or resolution')
+    if payload.assignee:
+        with auth.database() as identities:
+            identities.execute('SELECT id,username,role FROM users WHERE username=%s AND active=1', (payload.assignee,))
+            person = identities.fetchone()
+        if not person: raise HTTPException(422, 'Assignee must be an active user')
+        auth.require_repository(person, project_id, 'write')
+    with database() as db:
+        if not db.execute('UPDATE review_tasks SET status=?,assignee=?,resolution=? WHERE id=? AND project_id=?',
+            (payload.status, payload.assignee, payload.resolution.strip(), task_id, project_id)).rowcount:
+            raise HTTPException(404, 'Review task not found')
+    return {'id': task_id, **payload.model_dump()}
