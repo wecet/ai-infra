@@ -8,6 +8,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def run(command, cwd=ROOT, pythonpath=None):
     env = dict(os.environ)
+    env.setdefault('AUTH_MYSQL_PASSWORD', 'verification-only')
+    env.setdefault('AUTH_MYSQL_ROOT_PASSWORD', 'verification-only')
     if pythonpath: env['PYTHONPATH'] = str(ROOT / pythonpath)
     subprocess.run(command, cwd=cwd, env=env, check=True)
 

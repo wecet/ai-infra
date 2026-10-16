@@ -280,7 +280,7 @@ def test_evaluation_metrics_failures_and_unlabelled_anomaly_scores(tmp_path):
     result = evaluate({'annotation_type': 'anomaly_detection', 'base_model': 'colour-distance-anomaly-v1'}, root,
         lambda **values: None, None, None)
     assert result['metrics']['flagged_fraction'] == 1
-    assert result['sample_count'] == 105 and len(result['predictions']) == 100
+    assert result['sample_count'] == 105 and len(result['predictions']) == 105
     assert result['failure_examples'] == [] and len(result['flagged_examples']) == 50
     assert 'accuracy' not in result['metrics']
 

@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import zipfile
 import uuid
@@ -153,6 +154,21 @@ def train(manifest: str = Form(...), dataset: UploadFile = File(...)):
     return train_model(manifest, dataset)
 
 
+def file_digest(path):
+    with path.open('rb') as stream: return hashlib.file_digest(stream, 'sha256').hexdigest()
+
+
+def workbench_digest(workbench):
+    if not workbench or not workbench.get("path"): return None
+    root = Path(workbench['path'])
+    digest = hashlib.sha256()
+    for path in sorted([*root.rglob('*.py'), root / 'ai-workbench.json']):
+        if path.is_file():
+            digest.update(str(path.relative_to(root)).encode())
+            with path.open('rb') as stream: digest.update(hashlib.file_digest(stream, 'sha256').digest())
+    return digest.hexdigest()
+
+
 def train_model(manifest, dataset, report=None, binary=False):
     try: config = json.loads(manifest)
     except json.JSONDecodeError as exc: raise HTTPException(422, "Invalid training manifest") from exc
@@ -221,8 +237,8 @@ def train_model(manifest, dataset, report=None, binary=False):
         return {"status": "succeeded", "metrics": metrics, "artifact": artifact, "summary": summary, "config": effective.model_dump(mode="json"), "provenance": {
             "python": platform.python_version(), "platform": platform.platform(),
             "packages": {name: importlib.metadata.version(name) for name in ('fastapi', 'Pillow', 'ai-infra-interfaces')},
-            "dataset_sha256": hashlib.file_digest(archive.open('rb'), 'sha256').hexdigest(),
-            "workbench_sha256": hashlib.sha256(Path(workbench['entrypoint'].split(':')[0]).read_bytes()).hexdigest() if workbench and 'entrypoint' in workbench and Path(workbench['entrypoint'].split(':')[0]).is_file() else None}}
+            "dataset_sha256": file_digest(archive),
+            "workbench_sha256": workbench_digest(workbench)}}
     except (HTTPException, agent_jobs.Cancelled):
         raise
     except Exception as exc:
@@ -289,7 +305,17 @@ def job_artifact(job_id: str):
 
 @app.post('/api/v1/augmentation-preview')
 def augmentation_preview(manifest: str = Form(...), image: UploadFile = File(...)):
-    from preview import preview
-    try: return preview(json.loads(manifest), image.file, find_workbench, load_model)
-    except HTTPException: raise
-    except Exception as error: raise HTTPException(422, f'Invalid augmentation preview: {error}') from error
+    try:
+        value = json.loads(manifest)
+        if not isinstance(value, dict): raise ValueError('Manifest must be an object')
+        with tempfile.TemporaryDirectory(prefix='augmentation-preview-') as temporary:
+            root = Path(temporary)
+            (root / 'manifest.json').write_text(json.dumps(value))
+            with (root / 'image').open('wb') as output:
+                shutil.copyfileobj(image.file, output)
+            if (root / 'image').stat().st_size > 50 * 1024 * 1024: raise ValueError('Image exceeds 50 MiB')
+            result = subprocess.run([sys.executable, str(Path(__file__).with_name('preview.py')), str(root)], capture_output=True, text=True, timeout=60)
+            if result.returncode: raise ValueError(result.stderr[-1500:])
+            return json.loads(result.stdout)
+    except (ValueError, subprocess.SubprocessError) as error:
+        raise HTTPException(422, f'Invalid augmentation preview: {error}') from error

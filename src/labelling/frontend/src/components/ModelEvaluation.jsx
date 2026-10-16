@@ -15,7 +15,7 @@ export default function ModelEvaluation({ project, model, onClose }) {
   async function refresh(start = false) {
     try {
       let value = await api(`/projects/${project.id}/models/${model.id}/evaluation`);
-      if (start && model.evaluation_available && value.status === "not_started")
+      if (start && project.permission !== "read" && model.evaluation_available && value.status === "not_started")
         value = await api(`/projects/${project.id}/models/${model.id}/evaluation`, { method: "POST" });
       setEvaluation(value);
     }
@@ -42,7 +42,8 @@ export default function ModelEvaluation({ project, model, onClose }) {
     <div className="modal-heading"><div><div className="eyebrow">SAVED MODEL · V{model.model_version}</div><h2 id="model-evaluation-title">{model.run_name || model.name}</h2></div><button onClick={onClose}>Close</button></div>
     <p className="muted">{model.partition_recorded ? "Evaluate on the fixed held-out partition of its training dataset. These images were excluded from fitting." : "Inspect this saved model and its evaluation availability."}</p>
     {!model.partition_recorded ? <div className="notice">This model predates held-out tracking. Train a new run to evaluate a verified held-out partition.</div> : !model.evaluation_available ? <div className="notice">No evaluation is available: this run has no held-out images or its artifact is missing.</div> :
-      <div className="evaluation-actions"><span>Dataset: {model.version_name || model.version_id} · {model.held_out_samples} held-out images</span><button disabled={["queued", "running", "succeeded"].includes(evaluation?.status)} onClick={evaluate}>{["queued", "running"].includes(evaluation?.status) ? "Evaluating…" : evaluation?.status === "succeeded" ? "Evaluation saved" : "Evaluate model"}</button></div>}
+      <div className="evaluation-actions"><span>Dataset: {model.version_name || model.version_id} · {model.held_out_samples} held-out images</span><button disabled={project.permission === "read" || ["queued", "running", "cancelling", "succeeded"].includes(evaluation?.status)} onClick={evaluate}>{["queued", "running"].includes(evaluation?.status) ? "Evaluating…" : evaluation?.status === "succeeded" ? "Evaluation saved" : "Evaluate model"}</button></div>}
+    {project.permission !== "read" && ["queued", "running", "cancelling"].includes(evaluation?.status) && <button onClick={async () => { try { await api(`/projects/${project.id}/models/${model.id}/evaluation/cancel`, { method: 'POST' }); await refresh(); } catch (e) { setError(e.message); } }}>Request evaluation cancellation</button>}
     {error && <p className="alert" role="alert">{error}</p>}
     {evaluation?.error && <p className="alert" role="alert">{evaluation.error}</p>}
     {["queued", "running"].includes(evaluation?.status) && <p role="status">Evaluation continues if you close this window.</p>}

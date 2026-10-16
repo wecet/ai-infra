@@ -42,3 +42,11 @@ def preview(manifest, image_file, find_workbench, load_model):
         for bbox, category in zip(target['boxes'].tolist(), target['labels'].tolist()):
             transformed_boxes.append(dict(x=bbox[0], y=bbox[1], width=bbox[2]-bbox[0], height=bbox[3]-bbox[1], category_id=category))
     return {'before': encode(image), 'after': encode(to_pil_image(transformed)), 'boxes': transformed_boxes, 'seed': manifest.get('seed', 42), 'width': image.width, 'height': image.height}
+
+
+if __name__ == '__main__':
+    import sys
+    from workbenches import find_workbench, load_model
+    root = Path(sys.argv[1])
+    with (root / 'image').open('rb') as stream:
+        print(json.dumps(preview(json.loads((root / 'manifest.json').read_text()), stream, find_workbench, load_model)))

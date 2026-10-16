@@ -155,6 +155,7 @@ export default function Training({ project, initialModelId = "" }) {
             return <option key={m.key} value={m.key} disabled={disabled}>{m.workspace || "Bundled"} / {m.name}{disabled ? ` - ${m.available === false ? "unavailable" : m.task.replaceAll("_", " ")}` : ""}</option>;
           })}</select></label></div>
         {selectedModel && <p className="muted">{selectedModel.description}{selectedModel.path ? ` · ${selectedModel.path}` : ""}</p>}
+        {template && <p className="notice">Frozen membership: {Object.entries(template.partitions || {}).map(([key, count]) => `${count} ${key}`).join(" · ")}</p>}
         {template && <details className="run-template"><summary>Prefilled run configuration</summary>
           <dl><div><dt>Dataset</dt><dd>{template.dataset_path}</dd></div>
             <div><dt>Classes</dt><dd>{template.class_names.join(", ")}</dd></div>
@@ -176,7 +177,7 @@ export default function Training({ project, initialModelId = "" }) {
         {selectedModel?.config_schema?.properties?.augmentations && <AugmentationPreview project={project} request={() => ({ version_id: version, base_model: model, hyperparameters: normalizeParams(params, selectedModel), compute: { kind, cpu, gpu, endpoint } })} />}
         {!selectedModel?.config_schema && <p className="muted">This model does not expose a configurable Pydantic schema.</p>}
       </section>
-      <section><div className="eyebrow">COMPUTE TARGET</div><div className="compute-choice">
+      <section><div className="eyebrow">COMPUTE TARGET</div>{caps?.capacity && <p role="status">Agent capacity: {caps.capacity.running} running · {caps.capacity.queued} queued · limit {caps.capacity.limit} simultaneous jobs</p>}<div className="compute-choice">
         <label className={`compute-card ${kind === 'local' ? 'selected' : ''}`}><input type="radio" name="target" checked={kind === 'local'} onChange={() => { setKind('local'); load(); }} /><span><strong>Local agent</strong><small>Bundled with this Compose stack</small></span></label>
         <label className={`compute-card ${kind === 'remote' ? 'selected' : ''}`}><input type="radio" name="target" checked={kind === 'remote'} onChange={() => { setKind("remote"); setCaps(null); setProbe(""); }} /><span><strong>Remote agent</strong><small>Connect to another machine by IP</small></span></label></div>
         {kind === "local" ? <div className="device-row">
@@ -185,7 +186,7 @@ export default function Training({ project, initialModelId = "" }) {
           {!caps?.gpu?.available && <span className="muted small">{caps?.gpu?.reason || "Checking GPU availability…"}</span>}
         </div> : <div className="remote-row"><label>Agent IP address<input value={endpoint} required placeholder="192.168.1.20:8090" onChange={(e) => { setEndpoint(e.target.value); setCaps(null); setProbe(""); }} /></label><button type="button" onClick={testRemote}>Test connection</button><span className="muted">{probe}</span></div>}
       </section>
-      <div className="training-submit"><span className="muted small">{compatibleModels.length} compatible · {models.length - compatibleModels.length} visible but unavailable</span><button className="primary" disabled={busy || !version || !model || (kind === 'local' && !cpu && !gpu)}>{busy ? "Queuing…" : "Start training"}</button></div>
+      <div className="training-submit"><span className="muted small">{compatibleModels.length} compatible · {models.length - compatibleModels.length} visible but unavailable</span><button className="primary" disabled={busy || !version || !model || !selectedModel || (kind === "remote" && !caps) || (kind === 'local' && !cpu && !gpu)}>{busy ? "Queuing…" : "Start training"}</button></div>
     </fieldset></form>
     <div className="page-heading jobs-heading"><div><h2>Training jobs</h2><p className="muted">Compute-agent jobs continue when you refresh or close this page. Status and logs are restored automatically.</p></div><button onClick={refreshJobs}>Refresh status</button></div>
     {!jobs.length ? <div className="empty"><h2>No training jobs yet</h2><p>Publish a dataset version, choose a model, and start your first run.</p></div> :
