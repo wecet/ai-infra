@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException
 
 from common import database, get_project
 from routes.training import _agent_url, _archive
+from services.agent_polling import reconnect
 
 router = APIRouter()
 _active = set()
@@ -94,29 +95,30 @@ def run_evaluation(evaluation_id):
         _, archive = _archive(model['project_id'], model['version_id'], partition['test'])
         config = json.loads(model['effective_config'])
         manifest = {'job_id': evaluation_id, 'base_model': model['base_model'], 'annotation_type': model['task_type'], 'config': config}
+        def waiting(message):
+            with database() as db:
+                db.execute("UPDATE model_evaluations SET error=? WHERE id=?", (f'Reconnecting: {message}'[:2000], evaluation_id))
+        def accepted():
+            response = httpx.get(f'{agent}/api/v1/jobs/{evaluation_id}', timeout=10)
+            if response.status_code == 404:
+                response = httpx.post(f'{agent}/api/v1/evaluations', data={'manifest': json.dumps(manifest)},
+                    files={'dataset': ('held-out.zip', archive, 'application/zip'),
+                           'artifact': ('model.bin', Path(model['artifact_path']).read_bytes(), 'application/octet-stream')}, timeout=120)
+            response.raise_for_status()
+        reconnect(accepted, waiting)
+        def fetch(suffix=''):
+            response = httpx.get(f'{agent}/api/v1/jobs/{evaluation_id}{suffix}', timeout=120 if suffix else 10)
+            response.raise_for_status()
+            return response.json()
         while True:
-            try:
-                response = httpx.get(f'{agent}/api/v1/jobs/{evaluation_id}', timeout=10)
-                if response.status_code == 404:
-                    response = httpx.post(f'{agent}/api/v1/evaluations', data={'manifest': json.dumps(manifest)},
-                        files={'dataset': ('held-out.zip', archive, 'application/zip'),
-                               'artifact': ('model.bin', Path(model['artifact_path']).read_bytes(), 'application/octet-stream')}, timeout=120)
-                response.raise_for_status(); break
-            except httpx.HTTPStatusError: raise
-            except httpx.RequestError: time.sleep(2)
-        while True:
-            try:
-                response = httpx.get(f'{agent}/api/v1/jobs/{evaluation_id}', timeout=10)
-                response.raise_for_status(); state = response.json()
-                if state['status'] == 'failed': raise RuntimeError(state.get('error') or 'Evaluation failed')
-                if state['status'] == 'succeeded':
-                    response = httpx.get(f'{agent}/api/v1/jobs/{evaluation_id}/result', timeout=120)
-                    response.raise_for_status(); result = response.json()
-                    result.update(version_id=model['version_id'], training_job_id=model['training_job_id'], held_out_image_ids=partition['test'])
-                    with database() as db: db.execute("UPDATE model_evaluations SET status='succeeded',result=?,error='' WHERE id=?", (json.dumps(result), evaluation_id))
-                    return
-            except httpx.HTTPError:
-                pass  # Reconnect to agent-owned evaluation without duplicating inference.
+            state = reconnect(fetch, waiting)
+            with database() as db: db.execute("UPDATE model_evaluations SET error='' WHERE id=?", (evaluation_id,))
+            if state['status'] in ('failed', 'cancelled'): raise RuntimeError(state.get('error') or 'Evaluation stopped')
+            if state['status'] == 'succeeded':
+                result = reconnect(lambda: fetch('/result'), waiting)
+                result.update(version_id=model['version_id'], training_job_id=model['training_job_id'], held_out_image_ids=partition['test'])
+                with database() as db: db.execute("UPDATE model_evaluations SET status='succeeded',result=?,error='' WHERE id=?", (json.dumps(result), evaluation_id))
+                return
             time.sleep(2)
     except Exception as error:
         with database() as db: db.execute("UPDATE model_evaluations SET status='failed',error=? WHERE id=?", (str(error)[:2000], evaluation_id))

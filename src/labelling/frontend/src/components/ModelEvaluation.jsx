@@ -37,7 +37,7 @@ export default function ModelEvaluation({ project, model, onClose }) {
     {!model.partition_recorded ? <div className="notice">This model predates held-out tracking. Train a new run to evaluate a verified held-out partition.</div> : !model.evaluation_available ? <div className="notice">No evaluation is available: this run has no held-out images or its artifact is missing.</div> :
       <div className="evaluation-actions"><span>Dataset: {model.version_name || model.version_id} · {model.held_out_samples} held-out images</span><button disabled={["queued", "running", "succeeded"].includes(evaluation?.status)} onClick={evaluate}>{["queued", "running"].includes(evaluation?.status) ? "Evaluating…" : evaluation?.status === "succeeded" ? "Evaluation saved" : "Evaluate model"}</button></div>}
     {error && <p className="alert" role="alert">{error}</p>}
-    {evaluation?.status === "failed" && <p className="alert" role="alert">{evaluation.error}</p>}
+    {evaluation?.error && <p className="alert" role="alert">{evaluation.error}</p>}
     {["queued", "running"].includes(evaluation?.status) && <p role="status">Evaluation continues if you close this window.</p>}
     {evaluation?.status === "succeeded" && <>
       <dl className="evaluation-metrics">{Object.entries(result.metrics).map(([key, value]) => <div key={key}><dt>{key.replaceAll("_", " ")}</dt><dd>{typeof value === "number" ? Number(value.toPrecision(5)) : value}</dd></div>)}</dl>
