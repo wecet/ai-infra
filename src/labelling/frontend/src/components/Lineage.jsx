@@ -1,6 +1,7 @@
 import { formatDate } from "../dates";
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { connectionArrowhead, connectionLabel, connectionPath } from "../lineage-connectors";
+import { ancestors } from "../lineage-selection";
 import { api } from "../api";
 
 const stages = [
@@ -18,6 +19,7 @@ function nodeLabel(node) {
 }
 
 export default function Lineage({ project, onNavigate }) {
+  const [query, setQuery] = useState(""); const [selected, setSelected] = useState(""); const [collapsed, setCollapsed] = useState([]);
   const canvas = useRef(null);
   const [connectors, setConnectors] = useState([]);
   const [tooltip, setTooltip] = useState(null);
@@ -25,11 +27,13 @@ export default function Lineage({ project, onNavigate }) {
   const [lineage, setLineage] = useState(null); const [error, setError] = useState("");
   async function load() { try { setLineage(await api(`/projects/${project.id}/lineage`)); setError(""); } catch (e) { setError(e.message); } }
   useEffect(() => { load(); }, [project.id]);
+  const ancestry = useMemo(() => ancestors(lineage?.edges || [], selected), [lineage, selected]);
+  const selectedNode = lineage?.nodes.find((node) => node.id === selected);
   const byStage = useMemo(() => {
     const result = {};
-    stages.forEach((stage) => { result[stage.key] = lineage?.nodes.filter((node) => stage.types ? stage.types.includes(node.type) : node.type === stage.key) || []; });
+    stages.forEach((stage) => { result[stage.key] = lineage?.nodes.filter((node) => (stage.types ? stage.types.includes(node.type) : node.type === stage.key) && (!query || `${node.title} ${node.subtitle}`.toLowerCase().includes(query.toLowerCase()))) || []; });
     return result;
-  }, [lineage]);
+  }, [lineage, query, collapsed]);
   useLayoutEffect(() => {
     if (!lineage || !canvas.current) return;
     const element = canvas.current;
@@ -51,7 +55,7 @@ export default function Lineage({ project, onNavigate }) {
     element.querySelectorAll("[data-lineage-node]").forEach((node) => observer.observe(node));
     measure();
     return () => observer.disconnect();
-  }, [lineage]);
+  }, [lineage, query, collapsed]);
   function showConnection(event, edge) {
     const rect = event.currentTarget.getBoundingClientRect();
     setTooltip({ id: edge.id, label: edge.label,
@@ -69,11 +73,13 @@ export default function Lineage({ project, onNavigate }) {
   return <div className="lineage-page">
     <div className="page-heading"><div><h2>Dataset lineage</h2><p className="muted">Trace data from ingestion and review through versions, experiments, models, and deployments.</p></div><button onClick={load}>Refresh</button></div>
     {error && <div className="alert">{error}<button onClick={load}>Retry</button></div>}
+    <label>Search lineage<input value={query} onChange={(e) => setQuery(e.target.value)} /></label>
+    {selectedNode && <aside className="panel"><h3>{selectedNode.title}</h3><p>{selectedNode.subtitle}</p><p>{ancestry.size} entries in this ancestry</p><button onClick={() => open(selectedNode)}>Open details</button><button onClick={() => setSelected("")}>Clear selection</button></aside>}
     {!lineage ? <div className="empty">Loading lineage…</div> : <>
       <div className="lineage-counts">{Object.entries(lineage.counts).map(([key, value]) => <div key={key} className={`metric-${["batches", "versions", "lakefs_commits"].includes(key) ? "data" : "model"}`}><strong>{value}</strong><span>{key.replaceAll("_", " ")}</span></div>)}</div>
       <div className="lineage-graph" onScroll={() => setTooltip(null)}><div className="lineage-canvas" ref={canvas}>
       <svg className="lineage-connectors" aria-label="Lineage connections">
-        {connectors.map((edge) => <g key={edge.id} className={`lineage-connection ${edge.kind === "snapshot" ? "snapshot" : ""} ${tooltip?.id === edge.id || activeNode === edge.from || activeNode === edge.to ? "active" : ""}`}>
+        {connectors.map((edge) => <g key={edge.id} className={`lineage-connection ${edge.kind === "snapshot" ? "snapshot" : ""} ${tooltip?.id === edge.id || activeNode === edge.from || activeNode === edge.to || (selected && ancestry.has(edge.from) && ancestry.has(edge.to)) ? "active" : ""}`}>
           <path aria-hidden="true" className="lineage-connection-line" d={edge.path}/>
           <path className="lineage-connection-head" d={edge.head} aria-hidden="true"/>
           <path className="lineage-connection-hit" d={edge.path} tabIndex="0" role="img" aria-label={edge.label}
@@ -84,9 +90,9 @@ export default function Lineage({ project, onNavigate }) {
       </svg>
       <div className="lineage-root" data-lineage-node={`project:${project.id}`}><span className="lineage-kind">Project</span><strong>{project.name}</strong></div>
       <div className="lineage-flow">{stages.map((stage, stageIndex) => <section className="lineage-stage" key={stage.key}>
-        <header><span>{stageIndex + 1}</span><strong>{stage.title}</strong></header>
-        <div className="lineage-stage-nodes">{byStage[stage.key].length ? byStage[stage.key].map((node) =>
-          <button key={node.id} data-lineage-node={node.id} onMouseEnter={() => setActiveNode(node.id)} onMouseLeave={() => setActiveNode(null)} onFocus={() => setActiveNode(node.id)} onBlur={() => setActiveNode(null)} className={`lineage-node lineage-${node.type} lineage-${node.subtype || ""} ${node.status || ""}`} onClick={() => open(node)} disabled={!node.target}>
+        <header><span>{stageIndex + 1}</span><strong>{stage.title}</strong><button aria-expanded={!collapsed.includes(stage.key)} onClick={() => setCollapsed((current) => current.includes(stage.key) ? current.filter((key) => key !== stage.key) : [...current, stage.key])}>{collapsed.includes(stage.key) ? "Expand" : "Collapse"}</button></header>
+        <div className="lineage-stage-nodes" hidden={collapsed.includes(stage.key)}>{byStage[stage.key].length ? byStage[stage.key].map((node) =>
+          <button key={node.id} data-lineage-node={node.id} onMouseEnter={() => setActiveNode(node.id)} onMouseLeave={() => setActiveNode(null)} onFocus={() => setActiveNode(node.id)} onBlur={() => setActiveNode(null)} className={`lineage-node lineage-${node.type} lineage-${node.subtype || ""} ${node.status || ""} ${selected && ancestry.has(node.id) ? "selected" : ""}`} onClick={() => setSelected(node.id)} aria-pressed={selected === node.id}>
             <span className="lineage-kind">
               {node.type === "lakefs" && <svg className="lineage-type-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="7" cy="5" r="3"/><circle cx="7" cy="19" r="3"/><circle cx="18" cy="7" r="3"/><path d="M7 8v8m0-3c7 0 11-1 11-3"/></svg>}
               {node.type === "training" && <svg className="lineage-type-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="m10 7 7 5-7 5Z"/></svg>}
