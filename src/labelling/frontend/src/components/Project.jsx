@@ -9,6 +9,7 @@ import Editor from "./Editor";
 import Readiness from "./Readiness";
 import ModelReviewQueue from "./ModelReviewQueue";
 import DatasetExplorer from "./DatasetExplorer";
+import ImportStaging from "./ImportStaging";
 import Dashboard from "./Dashboard";
 import Training from "./Training";
 import Lineage from "./Lineage";
@@ -31,6 +32,7 @@ function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
     return projectSections.some((section) => section.tabs.some(([id]) => id === remembered)) ? remembered : anomaly || readOnly ? "stats" : "annotate";
   });
   useEffect(() => { window.sessionStorage.setItem(`studio-project-tab:${project.id}`, tab); }, [project.id, tab]);
+  const [stagedFiles, setStagedFiles] = useState(null);
   const [images, setImages] = useState([]);
   const [index, setIndex] = useState(0);
   const [locked, setLocked] = useState(false);
@@ -84,55 +86,9 @@ function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
     refresh(true);
     return () => onLock(false);
   }, [project.id]);
-  async function upload(e) {
-    const files = [...e.target.files].filter((f) =>
-      /\.(jpe?g|png|webp|bmp|tiff?)$/i.test(f.name),
-    );
-    e.target.value = "";
-    if (!files.length) {
-      setError(
-        "No supported images found. Choose JPEG, PNG, WebP, BMP or TIFF files.",
-      );
-      return;
-    }
-    setUploading(true);
-    lock(true);
-    setError("");
-    const failures = [];
-    let batchId = null;
-    if (images.length) {
-      try {
-        batchId = (await api(`/projects/${project.id}/batches`, {
-          method: "POST", body: JSON.stringify({ kind: "new_additions" }),
-        })).id;
-      } catch (e) {
-        setError(e.message); setUploading(false); lock(false); return;
-      }
-    }
-    for (let i = 0; i < files.length; i++) {
-      setProgress(`Importing ${i + 1} of ${files.length} · ${files[i].name}`);
-      const body = new FormData();
-      body.append(
-        "file",
-        files[i],
-        files[i].webkitRelativePath || files[i].name,
-      );
-      try {
-        await api(`/projects/${project.id}/images${batchId ? `?batch_id=${batchId}` : ""}`, { method: "POST", body });
-      } catch (e) {
-        failures.push(`${files[i].name}: ${e.message}`);
-      }
-    }
-    setProgress(
-      `${files.length - failures.length} of ${files.length} images imported. Reimporting identical files keeps existing progress.`,
-    );
-    if (failures.length)
-      setError(
-        `${failures.length} import(s) failed. ${failures.slice(0, 5).join(" · ")}`,
-      );
-    await refresh(true);
-    setUploading(false);
-    lock(false);
+  function upload(e) {
+    const files = [...e.target.files]; e.target.value = "";
+    if (files.length) setStagedFiles(files);
   }
   async function deleteProject() {
     if (
@@ -203,6 +159,7 @@ function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
           </label>
         </div>
       </div>
+      {stagedFiles && <ImportStaging project={project} files={stagedFiles} onClose={() => setStagedFiles(null)} onImported={() => refresh(true)} />}
       <nav className="project-navigation" aria-label="Project pages">
         <div className="tabs section-tabs">
           {projectSections.map((section) => <button key={section.label} disabled={locked}
