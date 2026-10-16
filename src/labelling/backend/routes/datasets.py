@@ -387,3 +387,33 @@ def readiness(project_id: str):
     for issue in quality(project_id)['issues']:
         checks.append({'code': issue['code'], 'count': issue['count'], 'severity': issue['severity'], 'message': issue['detail'], 'tab': 'stats'})
     return {'can_publish': bool(ready) and bool(counts['train']), 'samples': len(rows), 'published_samples': len(ready), 'partitions': counts, 'checks': checks}
+
+
+@router.post('/api/projects/{project_id}/annotations/preview')
+def preview_annotations(project_id: str, file: UploadFile = File(...)):
+    from services.import_validation import _validate_import_document
+    raw = file.file.read(MAX_UPLOAD + 1)
+    if len(raw) > MAX_UPLOAD: raise HTTPException(413, 'Import must be at most 50 MiB')
+    try:
+        if (file.filename or '').lower().endswith('.json'):
+            documents = [(file.filename, json.loads(raw))]
+        else:
+            with zipfile.ZipFile(io.BytesIO(raw)) as bundle:
+                documents = [(member.filename, json.loads(bundle.read(member))) for member in _safe_zip_members(bundle) if member.filename.endswith('.json')]
+        if not documents: raise HTTPException(422, 'Preview supports COCO JSON or a ZIP containing COCO JSON')
+        with database() as db:
+            project = get_project(db, project_id)
+            rows = db.execute('SELECT * FROM images WHERE project_id=?', (project_id,)).fetchall()
+        mappings = []; samples = []
+        for name, document in documents:
+            _validate_import_document(document, name)
+            target = {category['name'].casefold(): category for category in project['classes']}
+            for category in document['categories']:
+                mapped = target.get(category['name'].casefold())
+                mappings.append({'source': category['name'], 'target': mapped['name'] if mapped else None})
+            for image in document['images']:
+                matched = _match_image(rows, image['file_name'])
+                samples.append({'source_path': image['file_name'], 'status': 'matched' if matched else 'new image required'})
+        return {'class_mapping': mappings, 'samples': samples, 'can_import': all(item['target'] for item in mappings)}
+    except (ValueError, KeyError, TypeError, zipfile.BadZipFile) as error:
+        raise HTTPException(422, f'Invalid annotation import: {error}') from error

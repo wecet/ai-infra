@@ -11,6 +11,7 @@ import ModelReviewQueue from "./ModelReviewQueue";
 import DatasetExplorer from "./DatasetExplorer";
 import ImportStaging from "./ImportStaging";
 import Activity from "./Activity";
+import AnnotationImport from "./AnnotationImport";
 import Dashboard from "./Dashboard";
 import Training from "./Training";
 import Lineage from "./Lineage";
@@ -207,7 +208,7 @@ function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
         </div>
       )}
       {tab === "activity" ? <Activity project={project} /> : tab === "explore" ? <DatasetExplorer project={project} images={images} onEdit={(id) => { setIndex(images.findIndex((image) => image.id === id)); setTab("annotate"); }} /> : tab === "model-review" ? <ModelReviewQueue project={project} onEdit={(id) => { const next = images.findIndex((image) => image.id === id); if (next >= 0) { setIndex(next); setTab("annotate"); } }} /> : tab === "stats" ? (
-        <><Readiness project={project} onNavigate={setTab} /><Dashboard project={project} onConfigure={() => setTab("settings")} onPublished={() => setTab("versions")} /></>
+        <>{!anomaly && <AnnotationImport project={project} onImported={() => refresh()} />}<Readiness project={project} onNavigate={setTab} /><Dashboard project={project} onConfigure={() => setTab("settings")} onPublished={() => setTab("versions")} /></>
       ) : tab === "images" ? (
         <UnlabelledImages project={project} images={reviewImages || images} onDeleted={async (id) => { if (reviewImages) setReviewImages((list) => list.filter((image) => image.id !== id)); await refresh(); }} onClear={reviewImages ? () => setReviewImages(null) : null} />
       ) : tab === "settings" ? (
