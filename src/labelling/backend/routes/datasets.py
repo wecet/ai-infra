@@ -363,3 +363,27 @@ def export_project(project_id: str, payload: ExportRequest):
         raise
     return FileResponse(temp_path, media_type='application/zip', filename=f'{archive_name}.zip',
                         background=BackgroundTask(lambda: Path(temp_path).unlink(missing_ok=True)))
+
+
+@router.get('/api/projects/{project_id}/readiness')
+def readiness(project_id: str):
+    from services.partitions import freeze, partition
+    with database() as db:
+        project = get_project(db, project_id)
+        rows = db.execute('SELECT * FROM images WHERE project_id=? ORDER BY source_path,id', (project_id,)).fetchall()
+    ready = [row for row in rows if row['completed']]
+    snapshot = {'project': project, 'images': [dict(row) for row in ready]}
+    freeze(snapshot)
+    counts = {key: len(value) for key, value in partition(snapshot).items() if isinstance(value, list)}
+    checks = []
+    def check(code, count, severity, message, tab):
+        if count: checks.append(dict(code=code, count=count, severity=severity, message=message, tab=tab))
+    check('empty', not ready, 'error', 'Import and complete samples before publishing.', 'images' if project['annotation_type'] == 'anomaly_detection' else 'annotate')
+    check('train_empty', not counts['train'], 'error', 'The fitting partition is empty. Adjust the split in Settings.', 'settings')
+    check('test_empty', not counts['test'], 'warning', 'No held-out evaluation samples. Adjust the split in Settings.', 'settings')
+    if project['annotation_type'] != 'anomaly_detection':
+        check('incomplete', len(rows) - len(ready), 'warning', 'Unfinished samples are excluded from publication.', 'annotate')
+        check('unreviewed', sum(row['review_status'] != 'approved' for row in ready), 'warning', 'Completed samples still need review.', 'review')
+    for issue in quality(project_id)['issues']:
+        checks.append({'code': issue['code'], 'count': issue['count'], 'severity': issue['severity'], 'message': issue['detail'], 'tab': 'stats'})
+    return {'can_publish': bool(ready) and bool(counts['train']), 'samples': len(rows), 'published_samples': len(ready), 'partitions': counts, 'checks': checks}

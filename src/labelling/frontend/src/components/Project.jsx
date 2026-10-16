@@ -6,6 +6,7 @@ import Settings from "./Settings";
 import History from "./History";
 import Versions from "./Versions";
 import Editor from "./Editor";
+import Readiness from "./Readiness";
 import Dashboard from "./Dashboard";
 import Training from "./Training";
 import Lineage from "./Lineage";
@@ -246,7 +247,7 @@ function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
         </div>
       )}
       {tab === "stats" ? (
-        <Dashboard project={project} onConfigure={() => setTab("settings")} onPublished={() => setTab("versions")} />
+        <><Readiness project={project} onNavigate={setTab} /><Dashboard project={project} onConfigure={() => setTab("settings")} onPublished={() => setTab("versions")} /></>
       ) : tab === "images" ? (
         <UnlabelledImages project={project} images={reviewImages || images} onDeleted={async (id) => { if (reviewImages) setReviewImages((list) => list.filter((image) => image.id !== id)); await refresh(); }} onClear={reviewImages ? () => setReviewImages(null) : null} />
       ) : tab === "settings" ? (
