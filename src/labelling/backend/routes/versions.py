@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 from common import *
 import lakefs_client
+from services.partitions import freeze
 
 router = APIRouter()
 
@@ -21,14 +22,8 @@ def publish_version(project_id: str, request: Request):
         author = request.state.user['username']
         snapshot = {'project': {key: project[key] for key in ('name', 'annotation_type', 'classes', 'description',
                     'labelling_instructions', 'ai_instructions', 'export_train_percent')},
-                    'images': [image_json(row) | {'stored_name': row['stored_name']} for row in rows]}
-        if project['annotation_type'] == 'anomaly_detection':
-            shuffled = list(rows)
-            random.Random(42).shuffle(shuffled)
-            cut = math.floor(len(rows) * project['export_train_percent'] / 100 + 0.5)
-            train_ids = {row['id'] for row in shuffled[:cut]}
-            for image in snapshot['images']:
-                image['split'] = 'train' if image['id'] in train_ids else 'test'
+                    'images': [image_json(row) | {'stored_name': row['stored_name'], 'digest': row['digest']} for row in rows]}
+        freeze(snapshot)
         try:
             directory.mkdir(parents=True)
             for row in rows:
@@ -69,7 +64,7 @@ def _version_content(project_id, version_id, detail):
     coco = {'info': {'description': project.get('description', ''), 'project_name': project['name'],
              'annotation_type': project['annotation_type'], 'published_version': detail['name'],
              'date_created': detail['created_at'], 'images_annotated': len(snapshot['images'])},
-            'licenses': [], 'images': [], 'annotations': [],
+            'schema_version': snapshot.get('schema_version', 1), 'licenses': [], 'images': [], 'annotations': [],
             'categories': [category | {'supercategory': ''} for category in project['classes']]}
     if project['annotation_type'] == 'anomaly_detection':
         coco['info'].update(train_percent=project['export_train_percent'], split_seed=42,
@@ -82,8 +77,7 @@ def _version_content(project_id, version_id, detail):
                   'width': item['width'], 'height': item['height'], 'source_path': item['source_path']}
         if project['annotation_type'] == 'image_classification':
             record['category_ids'] = item['labels']
-        if project['annotation_type'] == 'anomaly_detection':
-            record['split'] = item['split']
+        if 'split' in item: record['split'] = item['split']
         coco['images'].append(record)
         path = DATA / 'versions' / project_id / version_id / item['stored_name']
         if not path.is_file():

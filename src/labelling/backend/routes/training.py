@@ -1,5 +1,6 @@
 """Version-bound training orchestration for local and remote compute agents."""
 import base64
+import hashlib
 import io
 import math
 import random
@@ -118,13 +119,7 @@ def _archive(project_id, version_id, image_ids=None):
     return detail, buffer.getvalue()
 
 
-def partition(snapshot):
-    images = sorted(snapshot['images'], key=lambda image: (image['source_path'], image['id']))
-    if all(image.get('split') in {'train', 'test'} for image in images):
-        return {split: [image['id'] for image in images if image['split'] == split] for split in ('train', 'test')}
-    random.Random(42).shuffle(images)
-    cut = math.floor(len(images) * snapshot['project'].get('export_train_percent', 80) / 100 + .5)
-    return {'train': [image['id'] for image in images[:cut]], 'test': [image['id'] for image in images[cut:]], 'seed': 42}
+from services.partitions import partition
 
 
 def _mlflow(job, metrics, config):
@@ -192,6 +187,10 @@ def _finish(job, result, model_config):
     artifact = output / filename
     artifact.write_bytes(base64.b64decode(artifact_data['content_base64'], validate=True))
     config = result.get('config', model_config)
+    with database() as db:
+        provenance = json.loads(db.execute('SELECT provenance FROM training_jobs WHERE id=?', (job_id,)).fetchone()['provenance'])
+        provenance.update(agent=result.get('provenance', {}), effective_config=config)
+        db.execute('UPDATE training_jobs SET provenance=? WHERE id=?', (json.dumps(provenance), job_id))
     metrics = result.get('metrics', {})
     key = 'validation_loss' if 'validation_loss' in metrics else next(iter(metrics), None)
     latest = {'name': key, 'value': metrics[key]} if key else {}
@@ -224,12 +223,15 @@ def _run(job_id):
                 with database() as db: db.execute("UPDATE training_jobs SET phase='reconnecting',error=? WHERE id=?", (str(error.detail)[:2000], job_id))
                 time.sleep(5)
         selected = json.loads(job['dataset_partition'])
-        detail, archive = _archive(job['project_id'], job['version_id'], selected.get('train'))
+        detail, archive = _archive(job['project_id'], job['version_id'], selected.get('train', []) + selected.get('validation', []))
         hyperparameters = json.loads(job['hyperparameters'])
         model_config = {'dataset_path': '/workspace/dataset.zip', 'output_path': f'/workspace/outputs/{job_id}',
             'mlflow_url': MLFLOW_URL, 'project_id': job['project_id'], 'dataset_version_id': job['version_id'],
             'class_names': [item['name'] for item in detail['snapshot']['project']['classes']],
             'devices': [key for key in ('cpu', 'gpu') if target.get(key)], **hyperparameters}
+        provenance = {'snapshot_sha256': hashlib.sha256(json.dumps(detail['snapshot'], sort_keys=True).encode()).hexdigest(),
+            'partition': selected, 'config': model_config, 'base_model': job['base_model'], 'split_seed': 42}
+        with database() as db: db.execute('UPDATE training_jobs SET provenance=? WHERE id=?', (json.dumps(provenance), job_id))
         manifest = {'job_id': job_id, 'annotation_type': job['task_type'], 'base_model': job['base_model'],
             'run_name': job['run_name'] or job_id, 'hyperparameters': hyperparameters, 'config': model_config,
             'devices': model_config['devices'], 'dataset_name': detail['name']}
@@ -291,6 +293,7 @@ def _job(row):
     item["compute_target"] = json.loads(item["compute_target"]); item["metrics"] = json.loads(item["metrics"])
     item["logs"] = json.loads(item["logs"]); item["latest_metric"] = json.loads(item["latest_metric"])
     item["dataset_partition"] = json.loads(item["dataset_partition"]); item["effective_config"] = json.loads(item["effective_config"])
+    item["provenance"] = json.loads(item["provenance"])
     item["artifact_available"] = bool(item.pop("artifact_path"))
     if item["mlflow_run_id"]:
         experiment_id, run_id = (item["mlflow_run_id"].split(":", 1)

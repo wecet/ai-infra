@@ -115,6 +115,7 @@ def init_db():
             error TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
         job_columns = {row['name'] for row in db.execute('PRAGMA table_info(training_jobs)')}
         for column, definition in (
+            ('provenance', "TEXT NOT NULL DEFAULT '{}'"),
             ('phase', "TEXT NOT NULL DEFAULT 'queued'"), ('heartbeat_at', 'TEXT'),
             ('logs', "TEXT NOT NULL DEFAULT '[]'"), ('latest_metric', "TEXT NOT NULL DEFAULT '{}'"),
             ('dataset_partition', "TEXT NOT NULL DEFAULT '{}'"), ('effective_config', "TEXT NOT NULL DEFAULT '{}'"),

@@ -1,5 +1,8 @@
 """Portable compute agent. Deploy this same container on CPU or GPU hosts."""
 import base64
+import hashlib
+import platform
+import importlib.metadata
 import json
 import os
 import re
@@ -182,6 +185,10 @@ def train_model(manifest, dataset, report=None):
         files = list((work / "dataset" / "annotations").glob("*.json"))
         if len(files) != 1: raise HTTPException(422, "Dataset must contain one COCO annotation file")
         coco = json.loads(files[0].read_text())
+        if not model_class and task != 'anomaly_detection':
+            fitting = {record['id'] for record in coco['images'] if record.get('split', 'train') == 'train'}
+            coco['images'] = [record for record in coco['images'] if record['id'] in fitting]
+            coco['annotations'] = [record for record in coco.get('annotations', []) if record['image_id'] in fitting]
         if report: report(phase="training", message=f"Training on {len(coco['images'])} images")
         if model_class:
             output = RUNS_ROOT / run_name
@@ -210,7 +217,11 @@ def train_model(manifest, dataset, report=None):
                         "content_base64": base64.b64encode(json.dumps(payload, indent=2).encode()).decode()}
             summary = "Reference model trained successfully"
         if report: report(phase="saving", metrics=metrics, message="Saving trained model")
-        return {"status": "succeeded", "metrics": metrics, "artifact": artifact, "summary": summary, "config": effective.model_dump(mode="json")}
+        return {"status": "succeeded", "metrics": metrics, "artifact": artifact, "summary": summary, "config": effective.model_dump(mode="json"), "provenance": {
+            "python": platform.python_version(), "platform": platform.platform(),
+            "packages": {name: importlib.metadata.version(name) for name in ('fastapi', 'Pillow', 'ai-infra-interfaces')},
+            "dataset_sha256": hashlib.file_digest(archive.open('rb'), 'sha256').hexdigest(),
+            "workbench_sha256": hashlib.sha256(Path(workbench['entrypoint'].split(':')[0]).read_bytes()).hexdigest() if workbench and 'entrypoint' in workbench and Path(workbench['entrypoint'].split(':')[0]).is_file() else None}}
     except (HTTPException, agent_jobs.Cancelled):
         raise
     except Exception as exc:
