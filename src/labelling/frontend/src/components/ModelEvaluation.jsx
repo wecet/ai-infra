@@ -76,6 +76,7 @@ export default function ModelEvaluation({ project, model, onClose }) {
         </div><figcaption title={image.source_path}><strong>{image.source_path}</strong>
           <span>Prediction: {image.predictions.map((prediction) => prediction.class_name ? `${prediction.class_name} (${Number(prediction.score).toFixed(2)})` : `score ${Number(prediction.anomaly_score).toFixed(4)}${prediction.is_anomaly ? " · flagged" : ""}`).join(", ") || "None"}</span>
           {!anomaly && <span>Expected: {image.ground_truth.map((item) => typeof item === "string" ? item : item.class_name).join(", ") || "None"}</span>}
+          {image.failed && project.permission !== "read" && <button onClick={async () => { try { await api(`/projects/${project.id}/models/${model.id}/review-tasks`, { method: "POST", body: JSON.stringify({ image_ids: [image.image_id] }) }); setError("Added to model review queue."); } catch (e) { setError(e.message); } }}>Send to review queue</button>}
           {image.failed && <span className="warning-text">Prediction differs from ground truth</span>}
         </figcaption>
       </figure>)}</div>

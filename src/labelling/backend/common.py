@@ -113,6 +113,13 @@ def init_db():
             project_id TEXT NOT NULL REFERENCES projects(id), version_id TEXT NOT NULL,
             status TEXT NOT NULL, agent_job_id TEXT NOT NULL, result TEXT NOT NULL DEFAULT '{}',
             error TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
+        db.execute("""CREATE TABLE IF NOT EXISTS review_tasks (
+            id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id),
+            model_id TEXT NOT NULL REFERENCES registered_models(id), image_id TEXT NOT NULL,
+            version_id TEXT NOT NULL, prediction TEXT NOT NULL, created_by TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'open', assignee TEXT NOT NULL DEFAULT '',
+            resolution TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(model_id,image_id))""")
         job_columns = {row['name'] for row in db.execute('PRAGMA table_info(training_jobs)')}
         for column, definition in (
             ('parent_job_id', 'TEXT'),

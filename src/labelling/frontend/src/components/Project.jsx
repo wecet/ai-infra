@@ -7,13 +7,14 @@ import History from "./History";
 import Versions from "./Versions";
 import Editor from "./Editor";
 import Readiness from "./Readiness";
+import ModelReviewQueue from "./ModelReviewQueue";
 import Dashboard from "./Dashboard";
 import Training from "./Training";
 import Lineage from "./Lineage";
 import VersionComparison from "./VersionComparison";
 
 const sections = [
-  { label: "Label", tabs: [["annotate", "Annotate"], ["review", "Review"]] },
+  { label: "Label", tabs: [["annotate", "Annotate"], ["review", "Review"], ["model-review", "Model review"]] },
   { label: "Dataset", tabs: [["stats", "Dashboard"], ["history", "History"], ["versions", "Versions"], ["compare", "Compare"], ["lineage", "Lineage"]] },
   { label: "Training", tabs: [["training", "Training"]] },
   { label: "Manage", tabs: [["settings", "Settings"]] },
@@ -246,7 +247,7 @@ function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
           <button onClick={() => refresh(true)}>Refresh</button>
         </div>
       )}
-      {tab === "stats" ? (
+      {tab === "model-review" ? <ModelReviewQueue project={project} onEdit={(id) => { const next = images.findIndex((image) => image.id === id); if (next >= 0) { setIndex(next); setTab("annotate"); } }} /> : tab === "stats" ? (
         <><Readiness project={project} onNavigate={setTab} /><Dashboard project={project} onConfigure={() => setTab("settings")} onPublished={() => setTab("versions")} /></>
       ) : tab === "images" ? (
         <UnlabelledImages project={project} images={reviewImages || images} onDeleted={async (id) => { if (reviewImages) setReviewImages((list) => list.filter((image) => image.id !== id)); await refresh(); }} onClear={reviewImages ? () => setReviewImages(null) : null} />

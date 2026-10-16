@@ -6,7 +6,8 @@ import uuid
 from pathlib import Path
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel, Field
 
 from common import database, get_project
 from routes.training import _agent_url
@@ -151,3 +152,29 @@ def compare_models(project_id: str, left: str, right: str):
     return {'compatible': not reasons, 'reasons': reasons, 'config_changes': changes,
         'metrics': [result.get('metrics', {}) for result in results],
         'examples': [{'image_id': key, 'left': rows[0][key], 'right': rows[1][key]} for key in rows[0].keys() & rows[1].keys()] if not reasons else []}
+
+
+class ReviewExamples(BaseModel):
+    image_ids: list[str] = Field(min_length=1, max_length=1000)
+
+
+@router.post('/api/projects/{project_id}/models/{model_id}/review-tasks', status_code=201)
+def queue_failures(project_id: str, model_id: str, payload: ReviewExamples, request: Request):
+    with database() as db:
+        model = model_row(db, project_id, model_id)
+        if model['task_type'] == 'anomaly_detection': raise HTTPException(422, 'Unlabelled flags are not verified failures')
+        evaluation = db.execute("SELECT result FROM model_evaluations WHERE model_id=? AND status='succeeded' ORDER BY created_at DESC,rowid DESC LIMIT 1", (model_id,)).fetchone()
+        examples = {row['image_id']: row for row in json.loads(evaluation['result']).get('failure_examples', [])} if evaluation else {}
+        if not set(payload.image_ids) <= examples.keys(): raise HTTPException(422, 'Select saved failure examples only')
+        for image_id in set(payload.image_ids):
+            db.execute("INSERT OR IGNORE INTO review_tasks (id,project_id,model_id,image_id,version_id,prediction,created_by) VALUES (?,?,?,?,?,?,?)",
+                (uuid.uuid4().hex, project_id, model_id, image_id, model['version_id'], json.dumps(examples[image_id]), request.state.user['username']))
+    return {'queued': len(set(payload.image_ids))}
+
+
+@router.get('/api/projects/{project_id}/review-tasks')
+def review_tasks(project_id: str):
+    with database() as db:
+        get_project(db, project_id)
+        rows = db.execute('SELECT t.*,i.source_path FROM review_tasks t LEFT JOIN images i ON i.id=t.image_id AND i.project_id=t.project_id WHERE t.project_id=? ORDER BY t.created_at DESC,t.rowid DESC', (project_id,)).fetchall()
+    return [dict(row) | {'prediction': json.loads(row['prediction'])} for row in rows]
