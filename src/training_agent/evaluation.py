@@ -92,9 +92,9 @@ def evaluate(manifest, directory, report, find_workbench, load_model):
         row = {'image_id': record.get('studio_image_id'), 'source_path': record.get('source_path', record['file_name']),
                'width': record['width'], 'height': record['height'], 'predictions': predictions,
                'ground_truth': truth, 'failed': failed}
-        if len(rows) < 100: rows.append(row)
-        if failed and len(failures) < 50: failures.append(row)
-        if task == 'anomaly_detection' and predictions[0].get('is_anomaly') and len(flagged) < 50: flagged.append(row)
+        rows.append(row)
+        if failed: failures.append(row)
+        if task == 'anomaly_detection' and predictions[0].get('is_anomaly') : flagged.append(row)
         report(phase='evaluating', step=index, total_steps=len(dataset['images']))
     metrics = {'evaluated_samples': len(dataset['images'])}
     if task == 'anomaly_detection':
@@ -107,7 +107,7 @@ def evaluate(manifest, directory, report, find_workbench, load_model):
                        true_positives=tp, false_positives=fp, false_negatives=fn)
         if task == 'image_classification': metrics['exact_match_accuracy'] = exact / len(dataset['images'])
     return {'metrics': metrics, 'predictions': rows, 'failure_examples': failures, 'flagged_examples': flagged,
-            'sample_count': len(dataset['images']), 'display_limit': 100, 'task': task,
+            'sample_count': len(dataset['images']), 'display_limit': len(rows), 'task': task,
             'metric_policy': {'image_classification': 'Multi-label exact match and micro precision/recall/F1 at score ≥ 0.5.',
                 'object_detection': 'Class-matched precision/recall/F1 at score ≥ 0.5 and IoU ≥ 0.5; greedy matching, not mAP.',
                 'anomaly_detection': 'Unlabelled anomaly scores and model-supplied flags; no ground-truth accuracy.'}[task]}

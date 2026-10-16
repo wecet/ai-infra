@@ -1,12 +1,15 @@
 import React, { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { classColor } from "../visuals";
+import { filterPredictions } from "../evaluation-filters";
 import AnnotationBox from "./AnnotationBox";
 
 export default function ModelEvaluation({ project, model, onClose }) {
   const dialog = useRef(null);
   const [evaluation, setEvaluation] = useState(null);
   const [error, setError] = useState("");
+  const [query, setQuery] = useState(""); const [category, setCategory] = useState("");
+  const [confidence, setConfidence] = useState(0); const [page, setPage] = useState(0);
   const [filter, setFilter] = useState("all");
   async function refresh(start = false) {
     try {
@@ -29,8 +32,11 @@ export default function ModelEvaluation({ project, model, onClose }) {
   }
   const result = evaluation?.result || {};
   const anomaly = project.annotation_type === "anomaly_detection";
-  const images = filter === "failures" ? result.failure_examples : filter === "flagged" ? result.flagged_examples : result.predictions;
+  const sourceImages = filter === "failures" ? result.failure_examples : filter === "flagged" ? result.flagged_examples : result.predictions;
   const categories = project.classes || [];
+  const filteredImages = filterPredictions(sourceImages || [], { query, category, confidence });
+  const images = filteredImages.slice(page * 24, (page + 1) * 24);
+  useEffect(() => { setPage(0); }, [query, category, confidence, filter]);
   return <dialog ref={dialog} className="model-evaluation" onCancel={onClose} aria-labelledby="model-evaluation-title">
     <div className="modal-heading"><div><div className="eyebrow">SAVED MODEL · V{model.model_version}</div><h2 id="model-evaluation-title">{model.run_name || model.name}</h2></div><button onClick={onClose}>Close</button></div>
     <p className="muted">{model.partition_recorded ? "Evaluate on the fixed held-out partition of its training dataset. These images were excluded from fitting." : "Inspect this saved model and its evaluation availability."}</p>
@@ -44,7 +50,12 @@ export default function ModelEvaluation({ project, model, onClose }) {
       <p className="muted small">{result.metric_policy} {anomaly && "Flags are not verified failures: this dataset has no ground-truth anomaly labels."}</p>
       <div className="evaluation-actions"><label>Examples<select value={filter} onChange={(event) => setFilter(event.target.value)}>
         <option value="all">Predictions</option>{anomaly ? <option value="flagged">Flagged examples</option> : <option value="failures">Failure examples</option>}
-      </select></label><span className="muted">Evaluated {result.sample_count} images · displaying up to {filter === "all" ? 100 : 50}</span></div>
+      </select></label><span className="muted">Evaluated {result.sample_count} images · 24 examples per page</span></div>
+      <div className="training-grid"><label>Search images<input value={query} onChange={(e) => setQuery(e.target.value)} /></label>
+        {!anomaly && <><label>Class<select value={category} onChange={(e) => setCategory(e.target.value)}><option value="">All classes</option>{categories.map((c) => <option key={c.id}>{c.name}</option>)}</select></label>
+        <label>Minimum prediction confidence<input type="number" min="0" max="1" step="0.05" value={confidence} onChange={(e) => setConfidence(Number(e.target.value))} /></label></>}
+      </div><p className="muted">Filters change displayed examples; saved metrics stay fixed.</p>
+      <div className="evaluation-actions"><button disabled={!page} onClick={() => setPage(page - 1)}>Previous</button><span>{filteredImages.length} matches · page {page + 1} of {Math.max(1, Math.ceil(filteredImages.length / 24))}</span><button disabled={(page + 1) * 24 >= filteredImages.length} onClick={() => setPage(page + 1)}>Next</button></div>
       {!images?.length && <p className="muted">No examples in this selection.</p>}
       <div className="evaluation-grid">{images?.map((image) => <figure key={image.image_id}>
         <div className="evaluation-image" style={{ aspectRatio: `${image.width}/${image.height}` }}>
