@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState, useId, useRef } from "react";
 import RunComparison from "./RunComparison";
+import AugmentationPreview from "./AugmentationPreview";
 import ModelEvaluation from "./ModelEvaluation";
 import { elapsedTime, heartbeatText } from "../training-status";
 import TrainingErrorDialog from "./TrainingErrorDialog";
@@ -172,6 +173,7 @@ export default function Training({ project, initialModelId = "" }) {
             {fields.map(([key, schema]) => <ConfigField key={key} name={key} schema={schema} value={params[key]} required={selectedModel.config_schema.required?.includes(key)}
               onChange={(value) => setParams((current) => ({ ...current, [key]: value }))} />)}</div>;
         })}
+        {selectedModel?.config_schema?.properties?.augmentations && <AugmentationPreview project={project} request={() => ({ version_id: version, base_model: model, hyperparameters: normalizeParams(params, selectedModel), compute: { kind, cpu, gpu, endpoint } })} />}
         {!selectedModel?.config_schema && <p className="muted">This model does not expose a configurable Pydantic schema.</p>}
       </section>
       <section><div className="eyebrow">COMPUTE TARGET</div><div className="compute-choice">

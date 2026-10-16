@@ -285,3 +285,11 @@ def job_artifact(job_id: str):
     path = jobs_root() / job_id / 'model.bin'
     if not path.is_file(): raise HTTPException(404, 'Artifact unavailable')
     return FileResponse(path, media_type='application/octet-stream')
+
+
+@app.post('/api/v1/augmentation-preview')
+def augmentation_preview(manifest: str = Form(...), image: UploadFile = File(...)):
+    from preview import preview
+    try: return preview(json.loads(manifest), image.file, find_workbench, load_model)
+    except HTTPException: raise
+    except Exception as error: raise HTTPException(422, f'Invalid augmentation preview: {error}') from error

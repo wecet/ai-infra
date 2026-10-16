@@ -364,3 +364,26 @@ def cancel_job(project_id: str, job_id: str):
     except httpx.HTTPError as error:
         raise HTTPException(502, 'Cancellation requested; agent is unreachable. Retry cancellation.') from error
     return {'id': job_id, 'status': 'cancelling'}
+
+
+class PreviewRequest(JobCreate):
+    seed: int = Field(default=42, ge=0, le=2**31-1)
+
+
+@router.post('/api/projects/{project_id}/augmentation-preview')
+def augmentation_preview(project_id: str, payload: PreviewRequest):
+    detail = version_detail(project_id, payload.version_id)
+    snapshot = detail['snapshot']
+    selected = partition(snapshot)['train']
+    image = next((row for row in snapshot['images'] if row['id'] in selected), None)
+    if image is None: raise HTTPException(422, 'No training sample available')
+    config = {'dataset_path': '/preview/dataset.zip', 'output_path': '/preview',
+        'class_names': [c['name'] for c in snapshot['project']['classes']], 'project_id': project_id,
+        'dataset_version_id': payload.version_id, **payload.hyperparameters}
+    agent = _agent_url(payload.compute.model_dump())
+    with (DATA / 'versions' / project_id / payload.version_id / image['stored_name']).open('rb') as stream:
+        try:
+            response = httpx.post(f'{agent}/api/v1/augmentation-preview', data={'manifest': json.dumps({'base_model': payload.base_model, 'config': config, 'seed': payload.seed, 'boxes': image['boxes']})}, files={'image': ('sample.png', stream, 'image/png')}, timeout=60)
+            response.raise_for_status()
+        except httpx.HTTPError as error: raise HTTPException(422, f'Preview unavailable on selected agent: {error}') from error
+    return response.json() | {'source_path': image['source_path']}
