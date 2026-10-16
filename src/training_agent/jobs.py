@@ -55,7 +55,6 @@ def start(root, job_id, manifest, dataset, handler, artifact=None):
                 'completed_at': None, 'heartbeat_at': now(), 'metrics': {}, 'latest_metric': None,
                 'logs': [{'time': now(), 'message': 'Job accepted by compute agent'}], 'error': ''})
         except Exception:
-            import shutil
             shutil.rmtree(directory, ignore_errors=True)
             raise
         launch(root, job_id, handler)
