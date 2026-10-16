@@ -78,12 +78,31 @@ def drain():
         threading.Thread(target=run, args=args, daemon=True).start()
 
 
+class Cancelled(Exception):
+    pass
+
+
+def cancel(root, job_id):
+    with _lock:
+        value = status(root, job_id)
+        if value['status'] in ('succeeded', 'failed', 'cancelled'): return value
+        key = (str(root.resolve()), job_id)
+        if key in _pending:
+            _pending.pop(key)
+            value.update(status='cancelled', phase='cancelled', completed_at=now())
+        else:
+            value.update(status='cancelling', phase='cancelling')
+        write(root / job_id / 'status.json', value)
+        return value
+
+
 def run(root, job_id, handler):
     directory = root / job_id
     finished = threading.Event()
     def report(phase=None, message=None, metrics=None, **progress):
         with _lock:
             value = status(root, job_id)
+            if value['status'] == 'cancelling' and (phase or message or metrics or progress): raise Cancelled('Cancelled by user')
             value.update(progress, heartbeat_at=now())
             if phase: value['phase'] = phase
             if message:
@@ -105,6 +124,11 @@ def run(root, job_id, handler):
             (directory / 'model.bin').write_bytes(base64.b64decode(artifact.pop('content_base64'), validate=True))
         write(directory / 'result.json', result)
         report(status='succeeded', completed_at=now(), phase='completed', metrics=result.get('metrics'), message='Job completed')
+    except Cancelled:
+        with _lock:
+            value = status(root, job_id)
+            value.update(status='cancelled', phase='cancelled', completed_at=now(), error='')
+            write(directory / 'status.json', value)
     except Exception as error:
         detail = error.detail if isinstance(error, HTTPException) else f'{type(error).__name__}: {error}'
         report(status='failed', completed_at=now(), phase='failed', error=str(detail)[:2000], message=str(detail))
@@ -132,7 +156,7 @@ def recover(root, handlers):
         with _lock:
             if (str(root.resolve()), path.parent.name) in _active: continue
         if value['status'] == 'queued': launch(root, path.parent.name, handlers[value['kind']])
-        elif value['status'] == 'running':
+        elif value['status'] in ('running', 'cancelling'):
             value.update(status='failed', phase='interrupted', completed_at=now(),
                          error='Compute agent restarted during execution. Retry as a new job.')
             value['logs'].append({'time': now(), 'message': value['error']})

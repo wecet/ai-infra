@@ -211,7 +211,7 @@ def train_model(manifest, dataset, report=None):
             summary = "Reference model trained successfully"
         if report: report(phase="saving", metrics=metrics, message="Saving trained model")
         return {"status": "succeeded", "metrics": metrics, "artifact": artifact, "summary": summary, "config": effective.model_dump(mode="json")}
-    except HTTPException:
+    except (HTTPException, agent_jobs.Cancelled):
         raise
     except Exception as exc:
         raise HTTPException(500, f"Training failed: {type(exc).__name__}: {exc}") from exc
@@ -258,3 +258,9 @@ def job_result(job_id: str):
 def submit_evaluation(manifest: str = Form(...), dataset: UploadFile = File(...), artifact: UploadFile = File(...)):
     value = request_manifest(manifest); value["kind"] = "evaluation"
     return agent_jobs.start(jobs_root(), value["job_id"], value, dataset.file.read(), execute_evaluation, artifact.file.read())
+
+
+@app.post("/api/v1/jobs/{job_id}/cancel")
+def cancel_job(job_id: str):
+    job_status(job_id)
+    return agent_jobs.cancel(jobs_root(), job_id)

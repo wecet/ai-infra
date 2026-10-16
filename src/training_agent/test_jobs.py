@@ -24,3 +24,20 @@ def test_capacity_keeps_second_job_queued(tmp_path, monkeypatch):
         assert jobs.capacity()['queued'] == 1
     finally: gate.set()
     wait_for(lambda: jobs.status(tmp_path, 'second')['status'] == 'succeeded')
+
+
+def test_cancel_waiting_and_cooperative_running_job(tmp_path, monkeypatch):
+    monkeypatch.setattr(jobs, 'MAX_CONCURRENT', 1)
+    gate = threading.Event()
+    def handler(manifest, directory, report):
+        gate.wait(3)
+        report(phase='epoch')
+        return {}
+    try:
+        jobs.start(tmp_path, 'running', {}, b'', handler)
+        wait_for(lambda: jobs.status(tmp_path, 'running')['status'] == 'running')
+        jobs.start(tmp_path, 'waiting', {}, b'', handler)
+        assert jobs.cancel(tmp_path, 'waiting')['status'] == 'cancelled'
+        assert jobs.cancel(tmp_path, 'running')['status'] == 'cancelling'
+    finally: gate.set()
+    wait_for(lambda: jobs.status(tmp_path, 'running')['status'] == 'cancelled')

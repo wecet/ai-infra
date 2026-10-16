@@ -165,7 +165,7 @@ def start_job(job_id):
 
 def resume_jobs():
     with database() as db:
-        ids = [row['id'] for row in db.execute("SELECT id FROM training_jobs WHERE status IN ('queued','running')")]
+        ids = [row['id'] for row in db.execute("SELECT id FROM training_jobs WHERE status IN ('queued','running','cancelling')")]
     for job_id in ids:
         with database() as db:
             record = db.execute('SELECT dataset_partition FROM training_jobs WHERE id=?', (job_id,)).fetchone()
@@ -178,9 +178,9 @@ def resume_jobs():
 
 def _persist_progress(job_id, value):
     with database() as db:
-        db.execute("""UPDATE training_jobs SET status='running',phase=?,heartbeat_at=?,logs=?,metrics=?,latest_metric=?,
-            started_at=COALESCE(started_at,?),error='' WHERE id=? AND status IN ('queued','running')""",
-            (value.get('phase', 'training'), value.get('heartbeat_at'), json.dumps(value.get('logs', [])),
+        db.execute("""UPDATE training_jobs SET status=?,phase=?,heartbeat_at=?,logs=?,metrics=?,latest_metric=?,
+            started_at=COALESCE(started_at,?),error='' WHERE id=? AND status IN ('queued','running','cancelling')""",
+            (value.get('status', 'running'), value.get('phase', 'training'), value.get('heartbeat_at'), json.dumps(value.get('logs', [])),
              json.dumps(value.get('metrics', {})), json.dumps(value.get('latest_metric') or {}), value.get('started_at'), job_id))
 
 
@@ -214,6 +214,9 @@ def _run(job_id):
     with database() as db:
         job = dict(db.execute('SELECT * FROM training_jobs WHERE id=?', (job_id,)).fetchone())
     try:
+        if job['status'] == 'cancelling':
+            with database() as db: db.execute("UPDATE training_jobs SET status='cancelled',phase='cancelled',completed_at=? WHERE id=?", (datetime.now(timezone.utc).isoformat(), job_id))
+            return
         target = json.loads(job['compute_target']); agent = _agent_url(target)
         while True:
             try: caps = _capabilities(agent); break
@@ -246,7 +249,15 @@ def _run(job_id):
                 try:
                     response = httpx.get(f'{agent}/api/v1/jobs/{job_id}', timeout=10)
                     response.raise_for_status(); value = response.json()
+                    with database() as db: intent = db.execute('SELECT status FROM training_jobs WHERE id=?', (job_id,)).fetchone()['status']
+                    if intent == 'cancelling' and value['status'] in ('queued', 'running'):
+                        cancellation = httpx.post(f'{agent}/api/v1/jobs/{job_id}/cancel', timeout=10)
+                        cancellation.raise_for_status()
+                        value = cancellation.json()
                     _persist_progress(job_id, value)
+                    if value['status'] == 'cancelled':
+                        with database() as db: db.execute("UPDATE training_jobs SET status='cancelled',phase='cancelled',completed_at=? WHERE id=?", (value.get('completed_at'), job_id))
+                        return
                     if value['status'] == 'failed': raise RuntimeError(value.get('error') or 'Agent job failed')
                     if value['status'] == 'succeeded':
                         response = httpx.get(f'{agent}/api/v1/jobs/{job_id}/result', timeout=120)
@@ -340,3 +351,20 @@ def artifact(project_id: str, job_id: str):
     if not row or not row["artifact_path"] or not Path(row["artifact_path"]).is_file(): raise HTTPException(404, "Model artifact is unavailable")
     path = Path(row["artifact_path"])
     return FileResponse(path, filename=f"{row['run_name'] or job_id}-{path.name}")
+
+
+@router.post('/api/projects/{project_id}/training/jobs/{job_id}/cancel')
+def cancel_job(project_id: str, job_id: str):
+    with database() as db:
+        row = db.execute('SELECT * FROM training_jobs WHERE project_id=? AND id=?', (project_id, job_id)).fetchone()
+        if not row: raise HTTPException(404, 'Training job not found')
+        if row['status'] not in ('queued', 'running', 'cancelling'): return _job(row)
+        agent = _agent_url(json.loads(row['compute_target']))
+        # Record cancellation intent before contacting the agent, including before submission.
+        db.execute("UPDATE training_jobs SET status='cancelling',phase='cancelling' WHERE id=?", (job_id,))
+    try:
+        response = httpx.post(f'{agent}/api/v1/jobs/{job_id}/cancel', timeout=10)
+        if response.status_code != 404: response.raise_for_status()
+    except httpx.HTTPError as error:
+        raise HTTPException(502, 'Cancellation requested; agent is unreachable. Retry cancellation.') from error
+    return {'id': job_id, 'status': 'cancelling'}

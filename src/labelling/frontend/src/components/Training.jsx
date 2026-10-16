@@ -188,11 +188,12 @@ export default function Training({ project, initialModelId = "" }) {
         <dl className="training-job-facts"><div><dt>Phase</dt><dd>{job.phase || job.status}</dd></div><div><dt>Elapsed</dt><dd>{elapsedTime(job, clock)}</dd></div><div><dt>Heartbeat</dt><dd>{heartbeatText(job, clock)}</dd></div><div><dt>Latest metric</dt><dd>{job.latest_metric?.name ? `${job.latest_metric.name.replaceAll("_", " ")}: ${Number(job.latest_metric.value).toPrecision(4)}` : "Waiting for metrics"}</dd></div></dl>
         {job.error && <p className={job.status === "failed" ? "warning-text" : "muted"}>{job.error}</p>}
         <div className="training-job-actions">
+          {project.permission !== "read" && ["queued", "running", "cancelling"].includes(job.status) && <button onClick={async () => { try { await api(`/projects/${project.id}/training/jobs/${job.id}/cancel`, { method: "POST" }); await refreshJobs(); } catch (e) { setError(e.message); } }}>Request cancellation</button>}
           {["queued", "running", "succeeded"].includes(job.status) && liveMetricsEnabled(job.hyperparameters, models.find((item) => item.key === job.base_model)) && dashboardUrl(caps, job) &&
             <a className="button" href={dashboardUrl(caps, job)} target="_blank" rel="noopener noreferrer"><span aria-hidden="true">▥</span> View live metrics</a>}
           {job.artifact_available && <a className="button" href={`/api/projects/${project.id}/training/jobs/${job.id}/artifact`}><span aria-hidden="true">↓</span> Download Model</a>}
           {savedModels.some((item) => item.training_job_id === job.id) && <button onClick={() => setViewModel(savedModels.find((item) => item.training_job_id === job.id))}>View model</button>}
-          {["failed", "succeeded"].includes(job.status) && <button onClick={() => cloneJob(job)}>{job.status === "failed" ? "Retry configuration" : "Clone configuration"}</button>}
+          {["failed", "succeeded", "cancelled"].includes(job.status) && <button onClick={() => cloneJob(job)}>{job.status === "failed" ? "Retry configuration" : "Clone configuration"}</button>}
           {job.mlflow_url && <a className="button" href={job.mlflow_url} target="_blank" rel="noopener noreferrer"><span aria-hidden="true">↗</span> View on MLflow</a>}
         </div>
         <details className="training-job-logs"><summary>Latest logs ({job.logs?.length || 0})</summary><pre aria-label={`Logs for ${job.run_name || job.id}`}>{job.logs?.length ? job.logs.map((line) => `${new Date(line.time).toLocaleTimeString()}  ${line.message}`).join("\n") : "Waiting for agent logs. Older agents only report their final result."}</pre></details>
