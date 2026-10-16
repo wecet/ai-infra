@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { api } from "../api";
+import { useAnnotationPersistence } from "../editor-persistence";
+import { imagePoint, useUnsavedGuard } from "../editor-interactions";
 import AnnotationBox from "./AnnotationBox";
 import { classColor } from "../visuals";
 
@@ -20,12 +22,9 @@ function Editor({
 }) {
   const activeClasses = project.classes.filter((item) => !item.archived);
   const [data, setData] = useState(null);
-  const [category, setCategory] = useState(activeClasses[0].id);
+  const [category, setCategory] = useState(activeClasses[0]?.id ?? 1);
   const [selected, setSelected] = useState(null);
   const [draft, setDraft] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [dirty, setDirty] = useState(false);
-  const [error, setError] = useState("");
   const [ready, setReady] = useState(false);
   const [aiWorking, setAiWorking] = useState(false);
   const [zoom, setZoom] = useState(1);
@@ -37,10 +36,8 @@ function Editor({
   const canvasScroll = useRef(null);
   const panGesture = useRef(null);
   const gesture = useRef(null);
-  const inFlight = useRef(false);
-  const undoStack = useRef([]);
-  const redoStack = useRef([]);
   const path = `/projects/${project.id}/images/${image.id}`;
+  const { saving, setSaving, dirty, setDirty, error, setError, inFlight, undoStack, redoStack, persist } = useAnnotationPersistence({ path, data, setData, onSaved });
   const classification = project.annotation_type === "image_classification";
   useEffect(() => {
     const controller = new AbortController();
@@ -66,65 +63,8 @@ function Editor({
   useEffect(() => {
     onLock(saving || dirty || uploading || !!draft);
   }, [saving, dirty, uploading, !!draft]);
-  useEffect(() => {
-    function prevent(e) {
-      if (saving || dirty || uploading) {
-        e.preventDefault();
-        e.returnValue = "";
-      }
-    }
-    window.addEventListener("beforeunload", prevent);
-    return () => window.removeEventListener("beforeunload", prevent);
-  }, [saving, dirty, uploading]);
-  async function persist(next, record = true) {
-    if (inFlight.current) return false;
-    if (record && data) {
-      undoStack.current.push(structuredClone(data));
-      if (undoStack.current.length > 50) undoStack.current.shift();
-      redoStack.current = [];
-    }
-    inFlight.current = true;
-    setData(next);
-    setDirty(true);
-    setSaving(true);
-    setError("");
-    try {
-      const saved = await api(path, {
-        method: "PUT",
-        body: JSON.stringify(next),
-      });
-      setData(saved);
-      setDirty(false);
-      onSaved(saved);
-      return true;
-    } catch (e) {
-      setError(e.message);
-      return false;
-    } finally {
-      inFlight.current = false;
-      setSaving(false);
-    }
-  }
-  const disabled = saving || uploading || !ready || !data;
-  function point(e) {
-    const rect = svg.current.getBoundingClientRect();
-    return {
-      x: Math.max(
-        0,
-        Math.min(
-          image.width,
-          ((e.clientX - rect.left) / rect.width) * image.width,
-        ),
-      ),
-      y: Math.max(
-        0,
-        Math.min(
-          image.height,
-          ((e.clientY - rect.top) / rect.height) * image.height,
-        ),
-      ),
-    };
-  }
+  useUnsavedGuard(saving || dirty || uploading);
+  function point(e) { return imagePoint(e, svg.current.getBoundingClientRect(), image); }
   function start(e, boxIndex = null, resize = false) {
     if (classification || disabled || dirty || inFlight.current || e.button !== 0) return;
     e.preventDefault();
