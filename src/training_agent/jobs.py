@@ -138,7 +138,12 @@ def run(root, job_id, handler):
             write(directory / 'status.json', value)
     except Exception as error:
         detail = error.detail if isinstance(error, HTTPException) else f'{type(error).__name__}: {error}'
-        report(status='failed', completed_at=now(), phase='failed', error=str(detail)[:2000], message=str(detail))
+        with _lock:
+            value = status(root, job_id)
+            cancelled = value['status'] == 'cancelling'
+            value.update(status='cancelled' if cancelled else 'failed', phase='cancelled' if cancelled else 'failed',
+                completed_at=now(), error='' if cancelled else str(detail)[:2000])
+            write(directory / 'status.json', value)
     finally:
         finished.set()
         with _lock:

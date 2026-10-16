@@ -51,7 +51,7 @@ def evaluation_json(row):
 def evaluation(project_id: str, model_id: str):
     with database() as db:
         model_row(db, project_id, model_id)
-        row = db.execute('SELECT * FROM model_evaluations WHERE model_id=? ORDER BY created_at DESC LIMIT 1', (model_id,)).fetchone()
+        row = db.execute('SELECT * FROM model_evaluations WHERE model_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1', (model_id,)).fetchone()
     return evaluation_json(row) if row else {'status': 'not_started', 'result': {}}
 
 
@@ -64,7 +64,7 @@ def evaluate_model(project_id: str, model_id: str):
         if not partition: raise HTTPException(422, 'This model predates held-out tracking. Train a new run to evaluate a verified held-out partition.')
         if not partition.get('test'): raise HTTPException(422, 'This run has no held-out images. Configure a nonempty test split and train a new run.')
         if not model['artifact_path'] or not Path(model['artifact_path']).is_file(): raise HTTPException(404, 'Model artifact is unavailable')
-        existing = db.execute("SELECT * FROM model_evaluations WHERE model_id=? AND status IN ('queued','running','succeeded') ORDER BY created_at DESC LIMIT 1", (model_id,)).fetchone()
+        existing = db.execute("SELECT * FROM model_evaluations WHERE model_id=? AND status IN ('queued','running','succeeded') ORDER BY created_at DESC,rowid DESC LIMIT 1", (model_id,)).fetchone()
         if existing: return evaluation_json(existing)
         evaluation_id = uuid.uuid4().hex
         db.execute('''INSERT INTO model_evaluations (id,model_id,project_id,version_id,status,agent_job_id)
@@ -82,8 +82,12 @@ def start_evaluation(evaluation_id):
 
 
 def resume_evaluations():
-    with database() as db: ids = [row['id'] for row in db.execute("SELECT id FROM model_evaluations WHERE status IN ('queued','running')")]
+    with database() as db: ids = [row['id'] for row in db.execute("SELECT id FROM model_evaluations WHERE status IN ('queued','running','cancelling')")]
     for evaluation_id in ids: start_evaluation(evaluation_id)
+
+
+class EvaluationCancelled(Exception):
+    pass
 
 
 def run_evaluation(evaluation_id):
@@ -91,7 +95,7 @@ def run_evaluation(evaluation_id):
         with database() as db:
             evaluation = dict(db.execute('SELECT * FROM model_evaluations WHERE id=?', (evaluation_id,)).fetchone())
             model = model_row(db, evaluation['project_id'], evaluation['model_id'])
-            db.execute("UPDATE model_evaluations SET status='running' WHERE id=?", (evaluation_id,))
+            db.execute("UPDATE model_evaluations SET status='running' WHERE id=? AND status!='cancelling'", (evaluation_id,))
         agent = _agent_url(json.loads(model['compute_target']))
         partition = json.loads(model['dataset_partition'])
         _, archive = _archive(model['project_id'], model['version_id'], partition['test'], stream=True)
@@ -105,6 +109,8 @@ def run_evaluation(evaluation_id):
             archive.seek(0); model_stream.seek(0)
             response = httpx.get(f'{agent}/api/v1/jobs/{evaluation_id}', timeout=10)
             if response.status_code == 404:
+                with database() as db: intent = db.execute('SELECT status FROM model_evaluations WHERE id=?', (evaluation_id,)).fetchone()['status']
+                if intent == 'cancelling': raise EvaluationCancelled()
                 response = httpx.post(f'{agent}/api/v1/evaluations', data={'manifest': json.dumps(manifest)},
                     files={'dataset': ('held-out.zip', archive, 'application/zip'),
                            'artifact': ('model.bin', model_stream, 'application/octet-stream')}, timeout=120)
@@ -117,13 +123,22 @@ def run_evaluation(evaluation_id):
         while True:
             state = reconnect(fetch, waiting)
             with database() as db: db.execute("UPDATE model_evaluations SET error='' WHERE id=?", (evaluation_id,))
-            if state['status'] in ('failed', 'cancelled'): raise RuntimeError(state.get('error') or 'Evaluation stopped')
+            with database() as db: intent = db.execute('SELECT status FROM model_evaluations WHERE id=?', (evaluation_id,)).fetchone()['status']
+            if intent == 'cancelling' and state['status'] in ('queued', 'running', 'cancelling'):
+                def cancel():
+                    response = httpx.post(f'{agent}/api/v1/jobs/{evaluation_id}/cancel', timeout=10)
+                    response.raise_for_status()
+                reconnect(cancel, waiting)
+            if state['status'] == 'cancelled': raise EvaluationCancelled()
+            if state['status'] == 'failed': raise RuntimeError(state.get('error') or 'Evaluation stopped')
             if state['status'] == 'succeeded':
                 result = reconnect(lambda: fetch('/result'), waiting)
                 result.update(version_id=model['version_id'], training_job_id=model['training_job_id'], held_out_image_ids=partition['test'])
                 with database() as db: db.execute("UPDATE model_evaluations SET status='succeeded',result=?,error='' WHERE id=?", (json.dumps(result), evaluation_id))
                 return
             time.sleep(2)
+    except EvaluationCancelled:
+        with database() as db: db.execute("UPDATE model_evaluations SET status='cancelled',error='' WHERE id=?", (evaluation_id,))
     except Exception as error:
         with database() as db: db.execute("UPDATE model_evaluations SET status='failed',error=? WHERE id=?", (str(error)[:2000], evaluation_id))
     finally:
@@ -202,3 +217,11 @@ def update_review_task(project_id: str, task_id: str, payload: TaskUpdate):
             (payload.status, payload.assignee, payload.resolution.strip(), task_id, project_id)).rowcount:
             raise HTTPException(404, 'Review task not found')
     return {'id': task_id, **payload.model_dump()}
+
+
+@router.post('/api/projects/{project_id}/models/{model_id}/evaluation/cancel')
+def cancel_evaluation(project_id: str, model_id: str):
+    with database() as db:
+        model_row(db, project_id, model_id)
+        db.execute("UPDATE model_evaluations SET status='cancelling' WHERE project_id=? AND model_id=? AND status IN ('queued','running')", (project_id, model_id))
+    return {'status': 'cancelling'}

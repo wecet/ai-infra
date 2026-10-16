@@ -810,7 +810,7 @@ def test_anomaly_training_job_preserves_frozen_split_and_registers_model(client,
     captured = {}
     def compute(url, data, files, timeout):
         manifest = json.loads(data['manifest']); captured.update(manifest)
-        with zipfile.ZipFile(io.BytesIO(files['dataset'][1])) as bundle:
+        with zipfile.ZipFile(files['dataset'][1] if hasattr(files['dataset'][1], 'read') else io.BytesIO(files['dataset'][1])) as bundle:
             document = json.loads(bundle.read(next(name for name in bundle.namelist() if name.endswith('.json'))))
         assert sum(image['split'] == 'train' for image in document['images']) == 4
         assert sum(image['split'] == 'test' for image in document['images']) == 0  # Held-out data never enters fitting.
@@ -852,14 +852,14 @@ def test_async_training_reattaches_and_excludes_held_out_images(client, monkeypa
     monkeypatch.setattr(training, 'start_job', lambda job_id: None)
     created = client.post(f'/api/projects/{pid}/training/jobs', json={'version_id': version['id'], 'base_model': 'class-box-prior-v1'}).json()
     job_id = created['id']; held_out = created['dataset_partition']['test']
-    assert len(held_out) == 1 and len(created['dataset_partition']['train']) == 4
+    assert len(held_out) == 1 and len(created['dataset_partition']['train']) == 3 and len(created['dataset_partition']['validation']) == 1
     progress = {'status': 'succeeded', 'phase': 'saving', 'metrics': {'train_loss': 0.4},
         'heartbeat_at': '2026-10-12T12:00:00Z', 'started_at': '2026-10-12T11:59:00Z',
         'latest_metric': {'name': 'train_loss', 'value': 0.4},
         'logs': [{'time': '2026-10-12T12:00:00Z', 'message': 'Epoch complete'}]}
     def get(url, timeout):
         payload = {'metrics': {'train_loss': 0.4}, 'artifact': {'filename': 'model.json',
-            'content_base64': base64.b64encode(b'{"priors":{}}').decode()}} if url.endswith('/result') else progress
+            'content_base64': base64.b64encode(b'{"priors":{}}').decode()}} if '/result' in url else progress
         return httpx.Response(200, json=payload, request=httpx.Request('GET', url))
     monkeypatch.setattr(training.httpx, 'get', get)
     monkeypatch.setattr(training.httpx, 'post', lambda *args, **kwargs: pytest.fail('Existing agent job must not be submitted twice'))
@@ -871,7 +871,7 @@ def test_async_training_reattaches_and_excludes_held_out_images(client, monkeypa
     _, train_archive = training._archive(pid, version['id'], job['dataset_partition']['train'])
     _, test_archive = training._archive(pid, version['id'], held_out)
     def ids(archive):
-        with zipfile.ZipFile(io.BytesIO(archive)) as bundle:
+        with zipfile.ZipFile(archive if hasattr(archive, 'read') else io.BytesIO(archive)) as bundle:
             return {item['studio_image_id'] for item in json.loads(bundle.read(next(name for name in bundle.namelist() if name.endswith('.json'))))['images']}
     assert ids(train_archive).isdisjoint(ids(test_archive)) and ids(test_archive) == set(held_out)
     models = client.get(f'/api/projects/{pid}/models').json()
