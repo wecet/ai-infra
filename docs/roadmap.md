@@ -86,3 +86,9 @@ Review the first three increments after they are used on real projects. Measure 
 ## Identity implementation update
 
 The first O2 slice is implemented: MySQL-backed sign-in, owner/member system roles, owner administration, teams, private repositories and server-enforced read/write/owner permissions. Review/comment/publish identities use authenticated users. Fine-grained trainer/labeller roles, MFA/SSO and a dedicated administrative audit trail remain future work. See [Users and repository access](users-and-repository-access.md).
+
+## Enhancement stack — 16 October 2026
+
+The stacked implementation adds bounded agent scheduling, cancellation, bounded reconnects, frozen supervised validation, run provenance and cloning ancestry, readiness, compatible model comparison, complete evaluation browsing, anomaly exploration, model review assignments, image and annotation import previews, dataset exploration, seeded augmentation previews, lineage navigation, project activity, streamed transfers and offline backup/isolated restore tooling. CI now verifies the service suites, MySQL authorization, PyTorch demos, frontend static checks/tests/build and Compose configuration. See [enhancement stack](enhancement-stack.md) for branch order.
+
+Older backlog rows above capture the original proposals. Checkpoint resume, group-aware/stratified splitting, general inference serving, streaming object storage, full retention management, sweeps and new project families remain separate future work.

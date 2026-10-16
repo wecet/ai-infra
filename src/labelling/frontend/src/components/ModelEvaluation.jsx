@@ -9,6 +9,7 @@ export default function ModelEvaluation({ project, model, onClose }) {
   const dialog = useRef(null);
   const [evaluation, setEvaluation] = useState(null);
   const [error, setError] = useState("");
+  const [errorType, setErrorType] = useState("");
   const [query, setQuery] = useState(""); const [category, setCategory] = useState("");
   const [confidence, setConfidence] = useState(0); const [page, setPage] = useState(0);
   const [filter, setFilter] = useState("all");
@@ -35,9 +36,9 @@ export default function ModelEvaluation({ project, model, onClose }) {
   const anomaly = project.annotation_type === "anomaly_detection";
   const sourceImages = filter === "failures" ? result.failure_examples : filter === "flagged" ? result.flagged_examples : result.predictions;
   const categories = project.classes || [];
-  const filteredImages = filterPredictions(sourceImages || [], { query, category, confidence });
+  const filteredImages = filterPredictions(sourceImages || [], { query, category, confidence, errorType });
   const images = filteredImages.slice(page * 24, (page + 1) * 24);
-  useEffect(() => { setPage(0); }, [query, category, confidence, filter]);
+  useEffect(() => { setPage(0); }, [query, category, confidence, filter, errorType]);
   return <dialog ref={dialog} className="model-evaluation" onCancel={onClose} aria-labelledby="model-evaluation-title">
     <div className="modal-heading"><div><div className="eyebrow">SAVED MODEL · V{model.model_version}</div><h2 id="model-evaluation-title">{model.run_name || model.name}</h2></div><button onClick={onClose}>Close</button></div>
     <p className="muted">{model.partition_recorded ? "Evaluate on the fixed held-out partition of its training dataset. These images were excluded from fitting." : "Inspect this saved model and its evaluation availability."}</p>
@@ -56,7 +57,7 @@ export default function ModelEvaluation({ project, model, onClose }) {
       </select></label><span className="muted">Evaluated {result.sample_count} images · 24 examples per page</span></div>
       <div className="training-grid"><label>Search images<input value={query} onChange={(e) => setQuery(e.target.value)} /></label>
         {!anomaly && <><label>Class<select value={category} onChange={(e) => setCategory(e.target.value)}><option value="">All classes</option>{categories.map((c) => <option key={c.id}>{c.name}</option>)}</select></label>
-        <label>Minimum prediction confidence<input type="number" min="0" max="1" step="0.05" value={confidence} onChange={(e) => setConfidence(Number(e.target.value))} /></label></>}
+        <label>Error type<select value={errorType} onChange={(e) => setErrorType(e.target.value)}><option value="">All error types</option><option value="false_positive">False positives</option><option value="false_negative">False negatives</option></select></label><label>Minimum prediction confidence<input type="number" min="0" max="1" step="0.05" value={confidence} onChange={(e) => setConfidence(Number(e.target.value))} /></label></>}
       </div><p className="muted">Filters change displayed examples; saved metrics stay fixed.</p>
       <div className="evaluation-actions"><button disabled={!page} onClick={() => setPage(page - 1)}>Previous</button><span>{filteredImages.length} matches · page {page + 1} of {Math.max(1, Math.ceil(filteredImages.length / 24))}</span><button disabled={(page + 1) * 24 >= filteredImages.length} onClick={() => setPage(page + 1)}>Next</button></div>
       {!images?.length && <p className="muted">No examples in this selection.</p>}

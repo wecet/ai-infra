@@ -6,3 +6,8 @@ test('filters retain ground truth class matches and combine confidence and searc
   assert.equal(filterPredictions(rows, { query: 'CAMERA', category: 'cat', confidence: .6, failures: true }).length, 1);
   assert.equal(filterPredictions(rows, { confidence: .8 }).length, 0);
 });
+test('error type filters distinguish extra predictions from missed truth', () => {
+  const rows = [{ source_path: 'sample', predictions: [], ground_truth: ['cat'], errors: ['false_negative'] }];
+  assert.equal(filterPredictions(rows, { errorType: 'false_negative' }).length, 1);
+  assert.equal(filterPredictions(rows, { errorType: 'false_positive' }).length, 0);
+});

@@ -4,6 +4,7 @@ python tools/backup_restore.py backup /path/to/new-backup
 python tools/backup_restore.py restore /path/to/backup --prefix studio-restore-test
 """
 import argparse
+import inspect
 import hashlib
 import json
 from pathlib import Path, PurePosixPath
@@ -39,6 +40,16 @@ def verify_data(root):
             if artifact and not (root / 'training' / job / Path(artifact).name).is_file(): raise ValueError('Model artifact missing')
 
 
+def extract_safe(archive, target):
+    # Fresh target only, and no links/special files: preserve numeric ownership for MySQL.
+    options = {'filter': 'fully_trusted'} if 'filter' in inspect.signature(archive.extract).parameters else {}
+    for member in archive:
+        name = PurePosixPath(member.name)
+        if name.is_absolute() or '..' in name.parts or not (member.isfile() or member.isdir()):
+            raise ValueError('Unsafe archive member')
+        archive.extract(member, target, **options)
+
+
 def inspect_backup(directory):
     manifest = json.loads((directory / 'manifest.json').read_text())
     if manifest.get('format') != 1: raise ValueError('Unsupported backup format')
@@ -60,6 +71,9 @@ def backup(directory):
     running = command('docker', 'compose', 'ps', '--status', 'running', '-q', capture_output=True, text=True).stdout.strip()
     if running: raise ValueError('Stop the stack first with docker compose stop (preserve volumes)')
     image = config['services']['labelling']['image']
+    for record in config['volumes'].values():
+        consumers = command('docker', 'ps', '-q', '--filter', f"volume={record['name']}", capture_output=True, text=True).stdout.strip()
+        if consumers: raise ValueError(f"Stop running consumers of volume {record['name']} before backup")
     directory.mkdir(parents=True)
     manifest = {'format': 1, 'volumes': {}, 'image': image}
     try:
@@ -87,11 +101,18 @@ def restore(directory, prefix, image=None):
     with tempfile.TemporaryDirectory() as temporary:
         local = Path(temporary)
         # Smoke-check restored Studio data before creating any Docker volumes.
-        with tarfile.open(directory / 'labelling_data.tar') as archive: archive.extractall(local, filter='data')
+        with tarfile.open(directory / 'labelling_data.tar') as archive: extract_safe(archive, local)
         verify_data(local)
     for key, name in names.items():
         command('docker', 'volume', 'create', name, capture_output=True)
-        script = "import tarfile,sys; t=tarfile.open(fileobj=sys.stdin.buffer,mode='r|'); t.extractall('/target',filter='data')"
+        script = """import tarfile,sys
+from pathlib import PurePosixPath
+t=tarfile.open(fileobj=sys.stdin.buffer,mode='r|')
+for member in t:
+    name=PurePosixPath(member.name)
+    if name.is_absolute() or '..' in name.parts or not (member.isfile() or member.isdir()): raise ValueError('Unsafe archive member')
+    t.extract(member,'/target',filter='fully_trusted')
+"""
         with (directory / f'{key}.tar').open('rb') as source:
             command('docker', 'run', '--rm', '-i', '--network', 'none', '--entrypoint', 'python', '--mount', f'type=volume,src={name},dst=/target', image or manifest['image'], '-c', script, stdin=source)
     print(json.dumps({'restored_volumes': names, 'studio_reference_check': 'passed'}, indent=2))

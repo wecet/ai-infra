@@ -69,10 +69,13 @@ def evaluate(manifest, directory, report, find_workbench, load_model):
         predictions = json.loads(json.dumps(predictions, allow_nan=False))
         truth = annotations.get(record['id'], []) if task == 'object_detection' else [names[category] for category in record.get('category_ids', [])]
         failed = False
+        errors = []
         if task == 'image_classification':
             predicted = {item['class_name'] for item in predictions if item.get('score', 1) >= 0.5}
             expected = set(truth)
             tp += len(predicted & expected); fp += len(predicted - expected); fn += len(expected - predicted)
+            if predicted - expected: errors.append('false_positive')
+            if expected - predicted: errors.append('false_negative')
             exact += predicted == expected; failed = predicted != expected
         elif task == 'object_detection':
             unmatched = list(truth); sample_fp = 0
@@ -83,6 +86,8 @@ def evaluate(manifest, directory, report, find_workbench, load_model):
                 overlap, position = max(candidates, default=(0, -1))
                 if overlap >= 0.5: tp += 1; unmatched.pop(position)
                 else: fp += 1; sample_fp += 1
+            if sample_fp: errors.append('false_positive')
+            if unmatched: errors.append('false_negative')
             fn += len(unmatched); failed = bool(unmatched or sample_fp)
         else:
             score = float(predictions[0]['anomaly_score'])
@@ -91,7 +96,7 @@ def evaluate(manifest, directory, report, find_workbench, load_model):
             flagged_count += bool(predictions[0].get("is_anomaly"))
         row = {'image_id': record.get('studio_image_id'), 'source_path': record.get('source_path', record['file_name']),
                'width': record['width'], 'height': record['height'], 'predictions': predictions,
-               'ground_truth': truth, 'failed': failed}
+               'ground_truth': truth, 'failed': failed, 'errors': errors}
         rows.append(row)
         if failed: failures.append(row)
         if task == 'anomaly_detection' and predictions[0].get('is_anomaly') : flagged.append(row)

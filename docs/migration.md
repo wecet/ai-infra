@@ -31,4 +31,4 @@ Restore validates hashes, safe archive paths, SQLite integrity and live/frozen/m
 fresh volumes. It refuses existing target volumes. It does not change the active stack or its credentials.
 The output maps volume keys to restored names. Use an isolated Compose project with those volume names,
 separate ports and the original credentials to perform service health checks before adopting a restore.
-Use Python 3.11.8+ for tar extraction filters. Docker backup/restore uses the local Studio image's Python.
+Archives reject links, traversal paths and special files before extraction. Restore preserves numeric file ownership for database volumes. Docker backup/restore uses the local Studio image's Python.
