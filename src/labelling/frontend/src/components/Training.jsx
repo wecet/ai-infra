@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState, useId, useRef } from "react";
+import RunComparison from "./RunComparison";
 import ModelEvaluation from "./ModelEvaluation";
 import { elapsedTime, heartbeatText } from "../training-status";
 import TrainingErrorDialog from "./TrainingErrorDialog";
@@ -204,6 +205,7 @@ export default function Training({ project, initialModelId = "" }) {
         {Object.keys(job.provenance || {}).length > 0 && <details><summary>Reproducibility record</summary><pre>{JSON.stringify(job.provenance, null, 2)}</pre></details>}
         {Object.keys(job.metrics).length > 0 && <details><summary>All metrics</summary><dl className="training-metrics">{Object.entries(job.metrics).map(([key, value]) => <div key={key}><dt>{key.replaceAll("_", " ")}</dt><dd>{Number(value).toPrecision(5)}</dd></div>)}</dl></details>}
       </article>)}</div>}
+    <RunComparison project={project} models={savedModels} />
     <div className="page-heading"><div><h2>Saved models</h2><p className="muted">Open a model to inspect predictions and evaluate its recorded held-out dataset.</p></div></div>
     {!savedModels.length ? <p className="muted">Saved models appear after successful training.</p> : <div className="saved-model-grid">{savedModels.map((item) => <button className="panel saved-model-card" key={item.id} onClick={() => setViewModel(item)}>
       <strong>{item.run_name || item.name}</strong><span className="muted">Model v{item.model_version} · {item.held_out_samples} held-out images</span><span>View predictions ↗</span>

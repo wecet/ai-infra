@@ -130,3 +130,24 @@ def run_evaluation(evaluation_id):
             stream = locals().get(name)
             if hasattr(stream, 'close'): stream.close()
         with _lock: _active.discard(evaluation_id)
+
+
+@router.get('/api/projects/{project_id}/model-comparison')
+def compare_models(project_id: str, left: str, right: str):
+    with database() as db:
+        pair = [model_row(db, project_id, model_id) for model_id in (left, right)]
+        evaluations = [db.execute("SELECT * FROM model_evaluations WHERE model_id=? AND status='succeeded' ORDER BY created_at DESC,rowid DESC LIMIT 1", (model_id,)).fetchone() for model_id in (left, right)]
+    results = [json.loads(row['result']) if row else {} for row in evaluations]
+    reasons = []
+    if pair[0]['task_type'] != pair[1]['task_type']: reasons.append('Different task types')
+    if pair[0]['version_id'] != pair[1]['version_id']: reasons.append('Different dataset versions')
+    partitions = [json.loads(model['dataset_partition']).get('test', []) for model in pair]
+    if not all(partitions) or set(partitions[0]) != set(partitions[1]): reasons.append('Different or missing held-out membership')
+    if not all(results): reasons.append('Both models need a saved evaluation')
+    if results[0].get('metric_policy') != results[1].get('metric_policy'): reasons.append('Different evaluation policies')
+    configs = [json.loads(model['effective_config']) for model in pair]
+    changes = {key: [configs[0].get(key), configs[1].get(key)] for key in configs[0].keys() | configs[1].keys() if configs[0].get(key) != configs[1].get(key)}
+    rows = [{row['image_id']: row for row in result.get('predictions', [])} for result in results]
+    return {'compatible': not reasons, 'reasons': reasons, 'config_changes': changes,
+        'metrics': [result.get('metrics', {}) for result in results],
+        'examples': [{'image_id': key, 'left': rows[0][key], 'right': rows[1][key]} for key in rows[0].keys() & rows[1].keys()] if not reasons else []}
