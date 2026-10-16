@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { classColor } from "../visuals";
 import { filterPredictions } from "../evaluation-filters";
+import AnomalyExplorer from "./AnomalyExplorer";
 import AnnotationBox from "./AnnotationBox";
 
 export default function ModelEvaluation({ project, model, onClose }) {
@@ -46,6 +47,7 @@ export default function ModelEvaluation({ project, model, onClose }) {
     {evaluation?.error && <p className="alert" role="alert">{evaluation.error}</p>}
     {["queued", "running"].includes(evaluation?.status) && <p role="status">Evaluation continues if you close this window.</p>}
     {evaluation?.status === "succeeded" && <>
+      {anomaly && <AnomalyExplorer project={project} model={model} rows={result.predictions || []} />}
       <dl className="evaluation-metrics">{Object.entries(result.metrics).map(([key, value]) => <div key={key}><dt>{key.replaceAll("_", " ")}</dt><dd>{typeof value === "number" ? Number(value.toPrecision(5)) : value}</dd></div>)}</dl>
       <p className="muted small">{result.metric_policy} {anomaly && "Flags are not verified failures: this dataset has no ground-truth anomaly labels."}</p>
       <div className="evaluation-actions"><label>Examples<select value={filter} onChange={(event) => setFilter(event.target.value)}>
