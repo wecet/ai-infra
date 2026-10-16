@@ -1,12 +1,15 @@
+let session = null;
+export function setSession(value) { session = value; }
+
 export async function api(path, options = {}) {
   const response = await fetch(`/api${path}`, {
     ...options,
-    headers:
-      options.body instanceof FormData
-        ? options.headers
-        : { "Content-Type": "application/json", ...options.headers },
+    cache: "no-store",
+    headers: { ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
+      ...(session ? { "X-CSRF-Token": session.csrf_token } : {}), ...options.headers },
   });
   if (!response.ok) {
+    if (response.status === 401 && !path.startsWith("/auth/")) window.dispatchEvent(new Event("studio-session-ended"));
     const body = await response.json().catch(() => ({}));
     throw new Error(
       typeof body.detail === "string"

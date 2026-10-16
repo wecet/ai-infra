@@ -27,11 +27,18 @@ services:
       TRAINING_AGENT_URL: http://training-agent:8090
       MLFLOW_TRACKING_URI: http://mlflow:5000
       MLFLOW_PUBLIC_URL: http://localhost:${MLFLOW_PORT:-5001}
+      AUTH_MYSQL_HOST: mysql
+      AUTH_MYSQL_DATABASE: ${AUTH_MYSQL_DATABASE:-studio_auth}
+      AUTH_MYSQL_USER: ${AUTH_MYSQL_USER:-studio}
+      AUTH_MYSQL_PASSWORD: ${AUTH_MYSQL_PASSWORD:?Set AUTH_MYSQL_PASSWORD for the user database}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
     ports:
       - "${LABELLING_PORT:-8081}:8080"
     volumes:
       - labelling_data:/data
     depends_on:
+      mysql:
+        condition: service_healthy
       lakefs:
         condition: service_healthy
       training-agent:
@@ -43,6 +50,26 @@ services:
       options:
         max-size: ${LOG_MAX_SIZE:-10m}
         max-file: "${LOG_MAX_FILE:-3}"
+
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${AUTH_MYSQL_DATABASE:-studio_auth}
+      MYSQL_USER: ${AUTH_MYSQL_USER:-studio}
+      MYSQL_PASSWORD: ${AUTH_MYSQL_PASSWORD:?Set AUTH_MYSQL_PASSWORD for the user database}
+      MYSQL_ROOT_PASSWORD: ${AUTH_MYSQL_ROOT_PASSWORD:?Set AUTH_MYSQL_ROOT_PASSWORD for the user database}
+    volumes:
+      - auth_mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "--silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+    networks:
+      - ai-infra
+    logging: *default-logging
 
   training-agent:
     build:
@@ -182,6 +209,8 @@ networks:
     name: ${NETWORK_NAME:-ai-infra-network}
 
 volumes:
+  auth_mysql:
+    name: ${AUTH_MYSQL_VOLUME:-ai-infra_auth_mysql}
   training_runs:
     name: ${TRAINING_RUNS_VOLUME:-ai-infra_training_runs}
   labelling_data:

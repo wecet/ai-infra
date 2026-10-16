@@ -1,0 +1,78 @@
+.auth-page { min-height: 100dvh; display: grid; place-items: center; padding: 24px; }
+.auth-card { width: min(100%, 460px); padding: 28px; display: grid; gap: 18px; }
+.auth-card h1 { font-size: 28px; margin: 6px 0; }
+.auth-card label, .account-form label:not(.checkbox-label), .account-create label, .access-grant label, .account-toolbar label { display: grid; gap: 7px; font-size: 12px; font-weight: 600; }
+.auth-card input, .administration :is(input,select), .access-grant :is(input,select), .account-dialog :is(input,select) { background: var(--canvas); color: inherit; border: 1px solid var(--line-strong); min-height: 38px; min-width: 0; }
+.auth-card :is(input,button):focus-visible, .administration :is(input,select,button):focus-visible, .access-grant :is(input,select,button):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.account-identity { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.role-badge { display: inline-flex; align-items: center; padding: 3px 7px; border: 1px solid var(--line-strong); border-radius: 5px; font-size: 11px; font-weight: 600; text-transform: capitalize; color: var(--muted); background: var(--canvas); }
+.role-owner { color: var(--accent-ink); border-color: var(--accent); background: var(--accent-soft); }
+.administration { display: grid; gap: 18px; }
+.account-section { padding: 20px; display: grid; gap: 16px; }
+.account-section :is(h2,h3,p), .team-card :is(h3,p) { margin: 0; }
+.account-toolbar { display: flex; align-items: end; justify-content: space-between; gap: 16px; }
+.account-toolbar label { width: min(320px, 100%); }
+.account-create { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; padding: 18px; background: var(--canvas); border: 1px solid var(--line); border-radius: 8px; }
+.account-create p { grid-column: 1 / -1; }.account-create button { justify-self: start; }
+.account-table-wrap { overflow-x: auto; }
+.account-table { width: 100%; text-align: left; border-collapse: collapse; font-size: 13px; }
+.account-table th { padding: 10px 12px; color: var(--muted); font-size: 11px; font-weight: 600; border-bottom: 1px solid var(--line-strong); }
+.account-table td { padding: 14px 12px; border-bottom: 1px solid var(--line); }
+.account-table td:first-child span { display: block; margin-top: 4px; }
+.account-table td:last-child { text-align: right; }
+.account-table button, .access-list button { min-height: 30px; padding: 4px 10px; font-size: 12px; }
+.account-dialog { width: min(520px,calc(100vw - 32px)); max-height: 85dvh; overflow: auto; padding: 24px; background: var(--panel); color: inherit; border: 1px solid var(--line-strong); border-radius: 12px; }
+.account-dialog::backdrop { background: #0008; }
+.account-form { display: grid; gap: 14px; margin-top: 18px; }
+.account-form button { justify-self: start; }
+.account-dialog .account-section { padding: 20px 0 0; border-top: 1px solid var(--line); }
+.team-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,360px),1fr)); gap: 16px; }
+.team-card { padding: 20px; display: grid; align-content: start; gap: 14px; }
+.access-grant { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; padding: 16px 0; }
+.panel.access-grant { padding: 20px; }.access-grant label { flex: 1; min-width: 130px; }.access-grant button { flex-shrink: 0; }
+.access-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.access-list li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.repository-owner { padding-bottom: 8px; }
+.settings-fields, .training-fields { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: 20px; }
+.settings-fields:disabled { opacity: .7; }
+@media(max-width:700px) { .account-create { grid-template-columns: 1fr; }.account-identity { flex-wrap: wrap; }.masthead-actions { flex-wrap: wrap; }.account-toolbar { flex-wrap: wrap; }.auth-card { padding: 22px; }.account-table td { padding: 12px 8px; } }
+
+.password-input { position: relative; display: block; min-width: 0; }
+.password-input > input { box-sizing: border-box; width: 100%; padding-right: 46px; }
+.password-input > .password-reveal { position: absolute; right: 3px; top: 3px; bottom: 3px; display: inline-flex; align-items: center; justify-content: center; width: 36px; min-height: 0; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--muted); box-shadow: none; touch-action: none; user-select: none; -webkit-touch-callout: none; }
+.password-input > .password-reveal:hover, .password-input > .password-reveal[aria-pressed="true"] { color: var(--accent-ink); background: var(--accent-soft); }
+.password-input > .password-reveal:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* Repository Manage keeps access, settings and class actions in distinct groups. */
+.repository-manage { display: grid; gap: 24px; width: 100%; max-width: 960px; min-width: 0; }
+.repository-manage > :is(.repository-access, .settings-form) { padding: 24px; }
+.repository-manage :is(h2,h3,p) { margin: 0; }
+.repository-manage :is(.repository-access, .settings-form) > div:first-child { display: grid; gap: 8px; }
+.repository-manage .settings-form { gap: 24px; max-width: none; }
+.repository-manage .settings-fields { gap: 24px; }
+.repository-manage .settings-fields > label { gap: 9px; }
+.repository-manage .settings-fields > label > :is(input,textarea) { box-sizing: border-box; }
+.repository-manage .settings-fields > label > input[type="number"] { max-width: 220px; }
+.repository-access .access-grant { display: grid; grid-template-columns: 140px minmax(180px,1fr) 140px auto; gap: 16px; padding: 8px 0; }
+.repository-access .access-grant label { min-width: 0; gap: 9px; }
+.repository-access .access-grant :is(select,button) { min-height: 38px; }
+.repository-access .repository-owner { padding: 4px 0; }
+.repository-access .access-list li { padding: 12px 0; }
+.repository-access > details.account-section { padding: 20px 0 0; border-top: 1px solid var(--line); }
+.repository-access > details > summary { cursor: pointer; font-weight: 600; }
+.repository-access > details[open] > summary { margin-bottom: 12px; }
+.repository-access > details .access-grant { grid-template-columns: minmax(180px,1fr) auto; padding-top: 16px; }
+.repository-manage .class-management { padding-top: 24px; gap: 14px; }
+.repository-manage .class-management > div:first-child { display: grid; gap: 8px; margin-bottom: 4px; }
+.repository-manage .managed-class { gap: 12px; }
+.repository-manage .managed-class.add-class { padding-top: 14px; border-top: 1px solid var(--line); }
+.repository-manage .settings-fields > .actions { padding-top: 20px; border-top: 1px solid var(--line); }
+@media(max-width:900px) { .repository-access .access-grant { grid-template-columns: repeat(2,minmax(0,1fr)); }.repository-access .access-grant button { justify-self: start; } }
+@media(max-width:600px) {
+  .repository-manage { gap: 18px; }
+  .repository-manage > :is(.repository-access,.settings-form) { padding: 18px; }
+  .repository-access .access-grant, .repository-access > details .access-grant { grid-template-columns: 1fr; }
+  .repository-manage .managed-class, .repository-manage .managed-class.add-class { grid-template-columns: 38px minmax(0,1fr); }
+  .repository-manage .managed-class > button { grid-column: 2; justify-self: start; }
+  .repository-manage .managed-class > select { grid-column: 2; width: 100%; }
+}

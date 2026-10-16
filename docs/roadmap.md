@@ -82,3 +82,7 @@ Defer a general workflow builder, distributed training orchestrator, full model 
 - What resource and retention budgets should constrain training, experiments and logs?
 
 Review the first three increments after they are used on real projects. Measure fewer stuck jobs, clearer run reproduction, and a user's ability to assess a model; do not use feature count as the success criterion.
+
+## Identity implementation update
+
+The first O2 slice is implemented: MySQL-backed sign-in, owner/member system roles, owner administration, teams, private repositories and server-enforced read/write/owner permissions. Review/comment/publish identities use authenticated users. Fine-grained trainer/labeller roles, MFA/SSO and a dedicated administrative audit trail remain future work. See [Users and repository access](users-and-repository-access.md).

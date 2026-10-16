@@ -67,7 +67,7 @@ Reference: [OpenAI image input](https://developers.openai.com/api/docs/guides/im
 
 Data lives under `/data` in the container: SQLite records are stored alongside active images in `/data/images`, recoverable deletion archives in `/data/deleted`, and immutable snapshot copies in `/data/versions`. Restarting or rebuilding preserves the named volume. Back up the entire volume with the service stopped to keep history, archives, and versions consistent.
 
-This service has no login or per-user permissions: deploy it on your trusted internal network. Conflicting edits to the same image from different tabs are rejected instead of overwriting newer annotations. A failed save is shown in the UI and blocks navigation until retried or explicitly discarded by reloading the image.
+This service requires sign-in and enforces system roles, repository ownership and direct/team Read/Write access. See [Users and repository access](../../docs/users-and-repository-access.md) for MySQL setup and first-owner migration. Conflicting edits to the same image from different tabs are rejected instead of overwriting newer annotations. A failed save is shown in the UI and blocks navigation until retried or explicitly discarded by reloading the image.
 
 ## Local development
 

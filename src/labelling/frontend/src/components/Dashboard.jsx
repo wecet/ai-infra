@@ -35,7 +35,7 @@ function Comments({ project }) {
         placeholder="Write a progress update…" value={body} disabled={posting}
         onChange={(e) => setBody(e.target.value)} />
       <div><span className="muted small">{body.length} / 4000</span>
-        <button className="primary" disabled={posting || !body.trim()}>{posting ? "Posting…" : "Post update"}</button></div>
+        <button className="primary" disabled={project.permission === "read" || posting || !body.trim()}>{posting ? "Posting…" : "Post update"}</button></div>
     </form>
     {error && <div className="alert">{error}<button onClick={load}>Retry</button></div>}
     {comments && !comments.length && <div className="comment-empty">No updates yet. Start the discussion.</div>}
@@ -139,7 +139,7 @@ function Dashboard({ project, onPublished, onConfigure }) {
                 {project.description || (anomaly ? "Unlabelled data, frozen splits, and anomaly training." : "A clear picture of your labelling progress.")}
               </p>
             </div>
-            <div className="actions"><button disabled={publishing || !stats.completed} onClick={publish}>
+            <div className="actions"><button disabled={project.permission === "read" || publishing || !stats.completed} onClick={publish}>
               {publishing ? "Publishing…" : "◈ Publish"}</button>
               <button className="primary" disabled={!stats.completed || exporting} onClick={() => setShowExport(true)}>
                 ↓ Export dataset</button></div>

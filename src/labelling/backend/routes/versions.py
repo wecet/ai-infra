@@ -18,8 +18,7 @@ def publish_version(project_id: str, request: Request):
         number = db.execute('SELECT COALESCE(MAX(version_number),0)+1 FROM dataset_versions WHERE project_id=?',
                             (project_id,)).fetchone()[0]
         name = f'v{number}-{datetime.now(timezone.utc).strftime("%y%m%d")}-ready'
-        author = (request.headers.get('x-forwarded-preferred-username') or
-                  request.headers.get('x-forwarded-user') or 'admin').strip()[:150] or 'admin'
+        author = request.state.user['username']
         snapshot = {'project': {key: project[key] for key in ('name', 'annotation_type', 'classes', 'description',
                     'labelling_instructions', 'ai_instructions', 'export_train_percent')},
                     'images': [image_json(row) | {'stored_name': row['stored_name']} for row in rows]}
@@ -122,8 +121,7 @@ def export_version(project_id: str, version_id: str):
 def push_version_to_lakefs(project_id: str, version_id: str, request: Request):
     detail = version_detail(project_id, version_id)
     archive_name, _, objects = _version_content(project_id, version_id, detail)
-    username = (request.headers.get('x-forwarded-preferred-username') or
-                request.headers.get('x-forwarded-user') or 'admin').strip()[:150] or 'admin'
+    username = request.state.user['username']
     date = datetime.now(timezone.utc).strftime('%d-%m-%y')
     message = f"Saving {detail['name']} at {date} by {username}"
     prefix = f'{archive_name}/'

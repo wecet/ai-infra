@@ -1,14 +1,17 @@
+import AuthGate from "./components/AuthGate";
+import Administration from "./components/Administration";
 import React, { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import CreateProject from "./components/CreateProject";
 import Project from "./components/Project";
 
-function App() {
+function Studio({ user, onSignedOut, onPassword }) {
   const [theme, setTheme] = useState(() => {
     const saved = window.localStorage.getItem("labelling-theme");
     if (saved === "light" || saved === "dark") return saved;
     return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   });
+  const [admin, setAdmin] = useState(false);
   const [projects, setProjects] = useState([]);
   const returningProject = useRef(window.sessionStorage.getItem("studio-open-project"));
   const [project, setProject] = useState(null);
@@ -46,9 +49,15 @@ function App() {
     document.documentElement.style.colorScheme = theme;
     window.localStorage.setItem("labelling-theme", theme);
   }, [theme]);
+  useEffect(() => {
+    const updated = () => { setProject(null); refresh(); };
+    window.addEventListener("studio-repositories-changed", updated);
+    return () => window.removeEventListener("studio-repositories-changed", updated);
+  }, []);
   async function open(id) {
     try {
       setProject(await api(`/projects/${id}`));
+      setAdmin(false);
       setCreating(false);
       setError("");
     } catch (e) {
@@ -86,6 +95,7 @@ function App() {
   }
   function dropProject(target) {
     const source = draggedProject;
+    if (target.permission !== "owner") { setMergeError("Repository ownership is required to merge projects."); finishDrag(); return; }
     if (!source || source.id === target.id) { finishDrag(); return; }
     if (source.annotation_type !== target.annotation_type) {
       setMergeError("Image Classification and Object Detection projects cannot be merged");
@@ -143,6 +153,7 @@ function App() {
           onClick={(e) => {
             e.preventDefault();
             if (!locked) {
+              setAdmin(false);
               setProject(null);
               setCreating(false);
               refresh();
@@ -156,7 +167,8 @@ function App() {
           </span>
         </a>
         <div className="masthead-actions">
-          <span className="tag masthead-status"><span className="status-dot" />Workspace ready</span>
+          <span className="account-identity">{user.display_name} <span className={`role-badge role-${user.role}`}>{user.role}</span></span>
+          <button onClick={onPassword}>Password</button><button onClick={onSignedOut}>Sign out</button>
           <button
             type="button"
             className="theme-toggle"
@@ -182,6 +194,7 @@ function App() {
             onChange={(e) => {
               if (e.target.value) open(e.target.value);
               else {
+                setAdmin(false);
                 setProject(null);
                 setCreating(false);
                 refresh();
@@ -202,10 +215,12 @@ function App() {
             : `${projects.length} projects`}
         </span>
         <div className="workspace-actions">
+          {user.role === "owner" && <button className={admin ? "active" : ""} disabled={locked} onClick={() => { setAdmin(true); setProject(null); setCreating(false); }}>Users &amp; teams</button>}
           <button
-            className={!project && !creating ? "active" : ""}
+            className={!admin && !project && !creating ? "active" : ""}
             disabled={locked}
             onClick={() => {
+              setAdmin(false);
               setProject(null);
               setCreating(false);
               refresh();
@@ -217,6 +232,7 @@ function App() {
             className={creating ? "active" : ""}
             disabled={locked}
             onClick={() => {
+              setAdmin(false);
               setProject(null);
               setCreating(true);
             }}
@@ -232,13 +248,13 @@ function App() {
             <button onClick={refresh}>Retry</button>
           </div>
         )}
-        {project ? (
+        {admin ? <Administration /> : project ? (
           <Project
             key={project.id}
             project={project}
             onLock={setLocked}
             onRefresh={refresh}
-            onUpdated={(next) => { setProject(next); refresh(); }}
+            onUpdated={(next) => { setProject({ ...project, ...next }); refresh(); }}
             onDeleted={() => {
               setProject(null);
               setLocked(false);
@@ -250,7 +266,7 @@ function App() {
             <div className="page-heading">
               <div>
                 <div className="page-kicker">Dataset repository</div>
-                <h1>Annotation projects</h1>
+                <h1>Dataset repositories</h1>
                 <p className="muted">
                   Build, review, and publish versioned image datasets. Your work saves automatically.
                 </p>
@@ -280,7 +296,7 @@ function App() {
                 <button
                   className={`project-card project-card-${p.annotation_type === "image_classification" ? "classification" : "detection"} ${draggedProject?.id === p.id ? "dragging" : ""} ${mergeTarget?.id === p.id ? "absorbing" : ""} ${reorderTarget?.id === p.id ? `reorder-${reorderTarget.position}` : ""}`}
                   key={p.id}
-                  draggable
+                  draggable={p.permission === "owner"}
                   onDragStart={(e) => {
                     dragged.current = true; setDraggedProject(p); setMergeTarget(null);
                     e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", p.id);
@@ -310,6 +326,7 @@ function App() {
                     {p.annotation_type === "anomaly_detection" ? "ANOMALY DETECTION" : p.annotation_type === "image_classification" ? "IMAGE CLASSIFICATION" : "OBJECT DETECTION"}
                   </div>
                   <h2>{p.name}</h2>
+                  <span className="muted small">@{p.owner_username} · {p.permission} access</span>
                   <p>
                     {p.total} images{" "}
                     <span className="muted">· {p.completed} {p.annotation_type === "anomaly_detection" ? "ready" : "labelled"}</span>
@@ -407,4 +424,6 @@ function App() {
   );
 }
 
-export default App;
+export default function App() {
+  return <AuthGate>{(user, logout, password) => <Studio key={user.id} user={user} onSignedOut={logout} onPassword={password} />}</AuthGate>;
+}

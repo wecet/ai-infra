@@ -20,7 +20,7 @@ export default function UnlabelledImages({ project, images, onClear, onDeleted }
     <div className="version-grid">{visible.map((image) => <figure key={image.id}>
       <img loading="lazy" src={`/api/projects/${project.id}/images/${image.id}/file`} alt={image.source_path} />
       <figcaption title={image.source_path}>{image.source_path}<span>{image.width} × {image.height}</span></figcaption>
-      <button disabled={!!busy} onClick={() => remove(image)}>{busy === image.id ? "Removing…" : "Remove image"}</button>
+      <button disabled={project.permission === "read" || !!busy} onClick={() => remove(image)}>{busy === image.id ? "Removing…" : "Remove image"}</button>
     </figure>)}</div>
   </section>;
 }
