@@ -10,9 +10,9 @@ test('workspace components render without undefined state or missing references'
   const previous = globalThis.window;
   globalThis.window = { sessionStorage: { getItem: () => null } };
   try {
-    for (const name of ['Editor', 'Training', 'ModelEvaluation', 'Lineage', 'Project']) {
+    for (const name of ['Editor', 'Training', 'ModelEvaluation', 'Lineage', 'Project', 'Readiness', 'AnnotationImport', 'DatasetExplorer', 'ModelReviewQueue', 'RunComparison', 'Activity']) {
       const { default: Component } = await server.ssrLoadModule(`/src/components/${name}.jsx`);
-      const props = { project, image: { id: 'image', width: 100, height: 80 }, model: { id: 'model', version_id: 'version' }, images: [], onSaved() {}, onLock() {}, onRefresh() {}, onUpdated() {}, onDeleted() {} };
+      const props = { project, image: { id: 'image', width: 100, height: 80 }, model: { id: 'model', version_id: 'version' }, images: [], models: [], onSaved() {}, onLock() {}, onRefresh() {}, onUpdated() {}, onDeleted() {} };
       assert.ok(renderToString(React.createElement(Component, props)).length > 0, name);
     }
   } finally { globalThis.window = previous; await server.close(); }

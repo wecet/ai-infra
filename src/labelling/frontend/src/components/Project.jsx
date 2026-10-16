@@ -208,7 +208,7 @@ function Project({ project, onLock, onRefresh, onUpdated, onDeleted }) {
         </div>
       )}
       {tab === "activity" ? <Activity project={project} /> : tab === "explore" ? <DatasetExplorer project={project} images={images} onEdit={(id) => { setIndex(images.findIndex((image) => image.id === id)); setTab("annotate"); }} /> : tab === "model-review" ? <ModelReviewQueue project={project} onEdit={(id) => { const next = images.findIndex((image) => image.id === id); if (next >= 0) { setIndex(next); setTab("annotate"); } }} /> : tab === "stats" ? (
-        <>{!anomaly && <AnnotationImport project={project} onImported={() => refresh()} />}<Readiness project={project} onNavigate={setTab} /><Dashboard project={project} onConfigure={() => setTab("settings")} onPublished={() => setTab("versions")} /></>
+        <div className="dataset-dashboard"><div className="dataset-preparation"><Readiness project={project} onNavigate={setTab} />{!anomaly && <AnnotationImport project={project} onImported={() => refresh()} />}</div><Dashboard project={project} onConfigure={() => setTab("settings")} onPublished={() => setTab("versions")} /></div>
       ) : tab === "images" ? (
         <UnlabelledImages project={project} images={reviewImages || images} onDeleted={async (id) => { if (reviewImages) setReviewImages((list) => list.filter((image) => image.id !== id)); await refresh(); }} onClear={reviewImages ? () => setReviewImages(null) : null} />
       ) : tab === "settings" ? (

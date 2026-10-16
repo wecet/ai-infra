@@ -1,0 +1,54 @@
+/* Shared spacing and control alignment across repository workflows. */
+.project-page > .page-heading { gap: 20px; }
+.project-page > .page-heading > div:first-child { min-width: 0; }
+.project-page > .page-heading h1 { overflow-wrap: anywhere; }
+.project-page .import-actions { flex-wrap: wrap; justify-content: flex-end; }
+.dataset-dashboard, .dataset-preparation { display: grid; gap: 20px; min-width: 0; }
+.dataset-preparation { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); align-items: stretch; }
+.project-page .workspace-panel { display: grid; align-content: start; gap: 16px; min-width: 0; padding: 24px; }
+.workspace-panel > :is(h2,h3,p,ul), .workspace-panel-heading h2 { margin: 0; }
+.workspace-panel > :is(button,input[type="file"]) { justify-self: start; max-width: 100%; }
+.workspace-panel-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.workspace-panel-heading button { flex-shrink: 0; }
+.workspace-panel p { line-height: 1.6; overflow-wrap: anywhere; }
+.readiness-checks { display: grid; gap: 0; padding: 0; list-style: none; }
+.readiness-checks li { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 16px; padding: 12px 0; }
+.readiness-checks li + li { border-top: 1px solid var(--line); }
+.readiness-checks li p { margin: 4px 0 0; }
+.readiness-checks li button { align-self: center; }
+.readiness-severity { text-transform: capitalize; font-size: 11px; color: var(--muted); }
+.project-page .training-grid { align-items: end; }
+.project-page .training-grid > label:not(.checkbox-label), .review-task-form > label { display: grid; align-content: start; gap: 8px; min-width: 0; font-weight: 600; }
+.project-page .training-grid > label > :is(input:not([type="checkbox"]):not([type="radio"]),select,textarea),
+.review-task-form > label > :is(input,select,textarea),
+.repository-manage .settings-fields > label > :is(input,textarea) { width: 100%; margin: 0; box-sizing: border-box; }
+.project-page .training-grid .checkbox-label { display: flex; align-items: center; gap: 8px; min-height: 38px; margin: 0; }
+.project-page .training-grid .checkbox-label input { flex: 0 0 auto; margin: 0; }
+.project-page .repository-manage { max-width: none; }
+.repository-owner > span, .access-list li > span { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.repository-access .access-grant :is(select,button) { box-sizing: border-box; height: 38px; margin: 0; }
+.review-task { display: grid; gap: 14px; padding-top: 20px; border-top: 1px solid var(--line); min-width: 0; }
+.review-task > :is(h3,p) { margin: 0; }
+.review-task > button { justify-self: start; }
+.review-task-form { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; align-items: end; }
+.review-task-form > label:nth-of-type(3), .review-task-form > p { grid-column: 1 / -1; }
+.review-task-form > button { justify-self: start; }
+.workspace-panel pre { max-width: 100%; max-height: 320px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.project-page .evaluation-grid { grid-template-columns: repeat(auto-fit,minmax(min(100%,240px),1fr)); }
+.project-page .evaluation-grid > figure > img { display: block; width: 100%; height: 180px; object-fit: contain; background: var(--canvas); }
+.project-page .evaluation-grid > figure > button { margin: 0 10px 10px; }
+@media (max-width: 1000px) {
+  .dataset-preparation { grid-template-columns: minmax(0,1fr); }
+  .project-page > .page-heading { flex-wrap: wrap; align-items: start; }
+  .project-page .import-actions { flex-shrink: 1; justify-content: flex-start; }
+}
+@media (max-width: 600px) {
+  .project-page .workspace-panel { padding: 18px; }
+  .project-page .training-grid, .review-task-form { grid-template-columns: minmax(0,1fr); }
+  .readiness-checks li { gap: 12px; }
+  .project-page .section-tabs { flex-wrap: wrap; }
+  .project-page .section-tabs > span { flex-basis: 100%; margin: 0; padding: 6px; }
+  .project-page .import-actions { gap: 8px; }
+}
+.project-page .workspace-panel > h2 { display: flex; align-items: center; min-height: 38px; }
+.project-page .training-grid > label > :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),select:not([multiple])) { height: 38px; min-height: 38px; }

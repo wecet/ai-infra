@@ -40,3 +40,7 @@ The final integration branch contains all 21 slices and their regression fixes. 
 - Interactive browser inspection was unavailable in this environment. Component rendering smoke tests, static checks and production compilation passed; visual keyboard/theme checks remain manual.
 
 No changes were deployed to the existing running stack, and main was not advanced. The aggregate branch is `fix/integration-boundaries`. Checkpoint resume, general serving, group-aware splits and new project families remain deferred as originally discussed.
+
+## Repository layout follow-up
+
+`fix/repository-layout` follows the aggregate branch. It aligns dashboard preparation cards, readiness actions, form labels and control heights, repository access badges and forms, and review task layouts. Compact widths use stacked fields and wrapping navigation. Safari visual checks covered Dashboard, Explore, annotation and Manage at desktop width, plus Explore at compact widths. Frontend static checks, 12 tests (including rendering all updated workflow components), production/container builds and 56 backend regression tests passed; the MySQL integration test was skipped in this UI-only follow-up because its isolated database was not running. The updated Studio container is running at localhost:8081. This follow-up and the complete enhancement stack are included in the local main merge.
