@@ -48,6 +48,7 @@ class ComputeTarget(BaseModel):
 
 
 class JobCreate(BaseModel):
+    parent_job_id: str | None = Field(default=None, max_length=64)
     version_id: str = Field(min_length=1, max_length=64)
     base_model: str = Field(min_length=1, max_length=150)
     hyperparameters: dict = Field(default_factory=dict)
@@ -318,6 +319,8 @@ def create_job(project_id: str, payload: JobCreate):
                          if item.get("available") and item.get("task") == project["annotation_type"])
         if payload.base_model not in installed: raise HTTPException(422, "Selected model is not installed on this compute agent")
         if target["gpu"] and not caps["gpu"]["available"]: raise HTTPException(422, caps["gpu"].get("reason", "GPU unavailable"))
+        if payload.parent_job_id and not db.execute('SELECT 1 FROM training_jobs WHERE id=? AND project_id=?', (payload.parent_job_id, project_id)).fetchone():
+            raise HTTPException(404, 'Parent run not found in this project')
         job_id = uuid.uuid4().hex
         slug = re.sub(r"[^a-z0-9]+", "-", project["name"].lower()).strip("-")[:80] or "project"
         prefix = f"{datetime.now(timezone.utc).strftime('%y%m%d')}-{slug}-v"
@@ -329,6 +332,7 @@ def create_job(project_id: str, payload: JobCreate):
         db.execute("""INSERT INTO training_jobs (id,project_id,version_id,task_type,base_model,hyperparameters,
             compute_target,run_name,tensorboard_url,dataset_partition,status) VALUES (?,?,?,?,?,?,?,?,?,?,'queued')""", (job_id, project_id, payload.version_id,
             project["annotation_type"], payload.base_model, json.dumps(payload.hyperparameters), json.dumps(target), run_name, caps.get("tensorboard", {}).get("url", "") if caps.get("tensorboard", {}).get("available") else "", json.dumps(partitions)))
+        db.execute('UPDATE training_jobs SET parent_job_id=? WHERE id=?', (payload.parent_job_id, job_id))
         row = db.execute("SELECT * FROM training_jobs WHERE id=?", (job_id,)).fetchone()
     with database() as db:
         db.execute('UPDATE training_jobs SET logs=? WHERE id=?', (json.dumps([{'time': datetime.now(timezone.utc).isoformat(), 'message': 'Queued; training continues independently of this page'}]), job_id))

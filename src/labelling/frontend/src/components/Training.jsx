@@ -50,6 +50,7 @@ export default function Training({ project, initialModelId = "" }) {
   const [savedModels, setSavedModels] = useState([]);
   const [viewModel, setViewModel] = useState(null);
   const [clock, setClock] = useState(Date.now());
+  const [parentRun, setParentRun] = useState(null);
   const [retryConfig, setRetryConfig] = useState(null);
   const [versions, setVersions] = useState([]); const [jobs, setJobs] = useState([]);
   const [caps, setCaps] = useState(null); const [version, setVersion] = useState("");
@@ -114,6 +115,7 @@ export default function Training({ project, initialModelId = "" }) {
     if (selectedModel && configuredModel.current !== model) { configuredModel.current = model; setParams(retryConfig?.base_model === model ? retryConfig.hyperparameters : schemaDefaults(selectedModel)); setRetryConfig(null); }
   }, [model, selectedModel]);
   function cloneJob(job) {
+    setParentRun(job);
     setVersion(job.version_id); setKind(job.compute_target.kind); setEndpoint(job.compute_target.endpoint || "");
     setCpu(job.compute_target.cpu); setGpu(job.compute_target.gpu);
     if (job.base_model === model) setParams(job.hyperparameters);
@@ -131,7 +133,7 @@ export default function Training({ project, initialModelId = "" }) {
     e.preventDefault(); setBusy(true); setError("");
     try { const hyperparameters = normalizeParams(params, selectedModel);
       await api(`/projects/${project.id}/training/jobs`, { method: "POST", body: JSON.stringify({
-      version_id: version, base_model: model, hyperparameters,
+      parent_job_id: parentRun?.id || null, version_id: version, base_model: model, hyperparameters,
       compute: { kind, cpu: kind === "local" ? cpu : true, gpu: kind === "local" ? gpu : false, endpoint },
     }) }); await refreshJobs(); } catch (e) { setTrainingErrors((current) => [...current, { message: e.message || "Training could not be started." }]); } finally { setBusy(false); }
   }
@@ -142,6 +144,7 @@ export default function Training({ project, initialModelId = "" }) {
       </div>
     {error && <div className="alert">{error}</div>}
     <form className="panel training-form" onSubmit={submit}><fieldset className="training-fields" disabled={project.permission === "read"}>
+      {parentRun && <aside className="notice"><strong>Cloned from {parentRun.run_name || parentRun.id}</strong><p>A new run will retain its parent. Review changes before starting.</p><pre>{JSON.stringify({ datasetChanged: version !== parentRun.version_id, modelChanged: model !== parentRun.base_model, original: parentRun.hyperparameters, proposed: params }, null, 2)}</pre><button type="button" onClick={() => setParentRun(null)}>Detach parent</button></aside>}
       <section><div className="eyebrow">DATA &amp; MODEL</div>
         <div className="training-grid"><label>Published version<select value={version} required onChange={(e) => setVersion(e.target.value)}>
           <option value="">Select a version</option>{versions.map((v) => <option key={v.id} value={v.id}>{v.name} · {v.sample_count} samples</option>)}</select></label>
@@ -186,6 +189,7 @@ export default function Training({ project, initialModelId = "" }) {
       <div className="training-job-list">{jobs.map((job) => <article className="panel training-job-card" key={job.id}>
         <header><div><strong>{job.run_name || job.base_model}</strong><p className="muted small">{job.base_model} · {versions.find((value) => value.id === job.version_id)?.name || job.version_id.slice(0, 8)} · {job.compute_target.kind} {job.compute_target.gpu ? "GPU" : "CPU"}</p></div><span className={`job-status ${job.status}`}>{job.status}</span></header>
         <dl className="training-job-facts"><div><dt>Phase</dt><dd>{job.phase || job.status}</dd></div><div><dt>Elapsed</dt><dd>{elapsedTime(job, clock)}</dd></div><div><dt>Heartbeat</dt><dd>{heartbeatText(job, clock)}</dd></div><div><dt>Latest metric</dt><dd>{job.latest_metric?.name ? `${job.latest_metric.name.replaceAll("_", " ")}: ${Number(job.latest_metric.value).toPrecision(4)}` : "Waiting for metrics"}</dd></div></dl>
+        {job.parent_job_id && <p className="muted small">Parent run: {jobs.find((item) => item.id === job.parent_job_id)?.run_name || job.parent_job_id}</p>}
         {job.error && <p className={job.status === "failed" ? "warning-text" : "muted"}>{job.error}</p>}
         <div className="training-job-actions">
           {project.permission !== "read" && ["queued", "running", "cancelling"].includes(job.status) && <button onClick={async () => { try { await api(`/projects/${project.id}/training/jobs/${job.id}/cancel`, { method: "POST" }); await refreshJobs(); } catch (e) { setError(e.message); } }}>Request cancellation</button>}
@@ -197,6 +201,7 @@ export default function Training({ project, initialModelId = "" }) {
           {job.mlflow_url && <a className="button" href={job.mlflow_url} target="_blank" rel="noopener noreferrer"><span aria-hidden="true">↗</span> View on MLflow</a>}
         </div>
         <details className="training-job-logs"><summary>Latest logs ({job.logs?.length || 0})</summary><pre aria-label={`Logs for ${job.run_name || job.id}`}>{job.logs?.length ? job.logs.map((line) => `${new Date(line.time).toLocaleTimeString()}  ${line.message}`).join("\n") : "Waiting for agent logs. Older agents only report their final result."}</pre></details>
+        {Object.keys(job.provenance || {}).length > 0 && <details><summary>Reproducibility record</summary><pre>{JSON.stringify(job.provenance, null, 2)}</pre></details>}
         {Object.keys(job.metrics).length > 0 && <details><summary>All metrics</summary><dl className="training-metrics">{Object.entries(job.metrics).map(([key, value]) => <div key={key}><dt>{key.replaceAll("_", " ")}</dt><dd>{Number(value).toPrecision(5)}</dd></div>)}</dl></details>}
       </article>)}</div>}
     <div className="page-heading"><div><h2>Saved models</h2><p className="muted">Open a model to inspect predictions and evaluate its recorded held-out dataset.</p></div></div>
