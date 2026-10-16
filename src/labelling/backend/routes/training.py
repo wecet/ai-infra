@@ -24,7 +24,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, model_validator
 
 from common import DATA, database, get_project
-from routes.versions import _version_content, version_detail
+from services.datasets import _archive, version_detail
 
 router = APIRouter()
 LOCAL_AGENT = os.environ.get("TRAINING_AGENT_URL", "http://training-agent:8090").rstrip("/")
@@ -94,34 +94,6 @@ def training_template(project_id: str, version_id: str):
             "project_id": project_id, "dataset_version_id": version_id,
             "class_names": [item["name"] for item in project["classes"]],
             "annotation_type": project["annotation_type"], "dataset_name": detail["name"]}
-
-
-def _archive(project_id, version_id, image_ids=None, stream=False):
-    detail = version_detail(project_id, version_id)
-    _, manifest, objects = _version_content(project_id, version_id, detail, lazy=stream)
-    by_name = {f"images/{item['stored_name']}": item for item in detail['snapshot']['images']}
-    for record in manifest['images']:
-        record['studio_image_id'] = by_name[record['file_name']]['id']
-    if image_ids is not None:
-        allowed = set(image_ids)
-        manifest['images'] = [record for record in manifest['images'] if record['studio_image_id'] in allowed]
-        ids = {record['id'] for record in manifest['images']}
-        manifest['annotations'] = [item for item in manifest['annotations'] if item['image_id'] in ids]
-        files = {record['file_name'] for record in manifest['images']}
-        objects = [item for item in objects if item[0] in files or item[0].endswith('.json')]
-    manifest['info']['archive_samples'] = len(manifest['images'])
-    if manifest['info']['annotation_type'] == 'anomaly_detection':
-        manifest['info']['train_samples'] = sum(image.get('split') == 'train' for image in manifest['images'])
-        manifest['info']['test_samples'] = sum(image.get('split') == 'test' for image in manifest['images'])
-    buffer = tempfile.TemporaryFile() if stream else io.BytesIO()
-    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as bundle:
-        for path, content, _ in objects:
-            if isinstance(content, Path): bundle.write(content, path)
-            else: bundle.writestr(path, json.dumps(manifest).encode() if path.endswith('.json') else content)
-    if stream:
-        buffer.seek(0)
-        return detail, buffer
-    return detail, buffer.getvalue()
 
 
 from services.partitions import partition

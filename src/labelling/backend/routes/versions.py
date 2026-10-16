@@ -1,7 +1,10 @@
 from fastapi import APIRouter
-from common import *
+from common import (
+    BackgroundTask, DATA, FileResponse, HTTPException, Path, Request, database, datetime, get_project, image_json, json, os, shutil, tempfile, timezone, uuid, zipfile
+)
 import lakefs_client
 from services.partitions import freeze
+from services import datasets as dataset_service
 
 router = APIRouter()
 
@@ -48,48 +51,10 @@ def versions(project_id: str):
 
 @router.get('/api/projects/{project_id}/versions/{version_id}')
 def version_detail(project_id: str, version_id: str):
-    with database() as db:
-        row = db.execute('SELECT * FROM dataset_versions WHERE id=? AND project_id=?',
-                         (version_id, project_id)).fetchone()
-        if row is None:
-            raise HTTPException(404, 'Published version not found')
-        return {key: row[key] for key in ('id', 'version_number', 'name', 'author', 'sample_count', 'created_at')} | {
-            'snapshot': json.loads(row['snapshot'])}
+    return dataset_service.version_detail(project_id, version_id)
 
 
-def _version_content(project_id, version_id, detail, lazy=False):
-    snapshot, project = detail['snapshot'], detail['snapshot']['project']
-    safe_project = re.sub(r'[^A-Za-z0-9._-]+', '_', project['name']).strip('._-')[:80] or 'project'
-    archive_name = f"{safe_project}_{detail['name']}"
-    coco = {'info': {'description': project.get('description', ''), 'project_name': project['name'],
-             'annotation_type': project['annotation_type'], 'published_version': detail['name'],
-             'date_created': detail['created_at'], 'images_annotated': len(snapshot['images'])},
-            'schema_version': snapshot.get('schema_version', 1), 'licenses': [], 'images': [], 'annotations': [],
-            'categories': [category | {'supercategory': ''} for category in project['classes']]}
-    if project['annotation_type'] == 'anomaly_detection':
-        coco['info'].update(train_percent=project['export_train_percent'], split_seed=42,
-                            train_samples=sum(item['split'] == 'train' for item in snapshot['images']),
-                            test_samples=sum(item['split'] == 'test' for item in snapshot['images']))
-    objects = []
-    for item in snapshot['images']:
-        image_id = len(coco['images']) + 1
-        record = {'id': image_id, 'file_name': f"images/{item['stored_name']}",
-                  'width': item['width'], 'height': item['height'], 'source_path': item['source_path']}
-        if project['annotation_type'] == 'image_classification':
-            record['category_ids'] = item['labels']
-        if 'split' in item: record['split'] = item['split']
-        coco['images'].append(record)
-        path = DATA / 'versions' / project_id / version_id / item['stored_name']
-        if not path.is_file():
-            raise HTTPException(404, f'Frozen image {item["source_path"]} is unavailable')
-        objects.append((record['file_name'], path if lazy else path.read_bytes(), 'application/octet-stream'))
-        for box in item['boxes']:
-            coco['annotations'].append({'id': len(coco['annotations']) + 1, 'image_id': image_id,
-                'category_id': box['category_id'], 'bbox': [box['x'], box['y'], box['width'], box['height']],
-                'area': box['width'] * box['height'], 'iscrowd': 0, 'segmentation': []})
-    annotation_path = f'annotations/{archive_name}.json'
-    objects.append((annotation_path, json.dumps(coco, indent=2).encode(), 'application/json'))
-    return archive_name, coco, objects
+_version_content = dataset_service._version_content
 
 
 @router.get('/api/projects/{project_id}/versions/{version_id}/export')

@@ -1,6 +1,8 @@
 import auth
 from fastapi import APIRouter
-from common import *
+from common import (
+    ClassCreate, ClassMerge, ClassUpdate, CommentCreate, DATA, File, Form, HTTPException, MAX_UPLOAD, ProjectCreate, ProjectMerge, ProjectOrder, ProjectUpdate, PurePosixPath, Request, UploadFile, _safe_zip_members, database, freeze_addition_batches, get_project, io, json, re, shutil, uuid, zipfile
+)
 from common import _safe_zip_members
 from routes.datasets import import_annotations
 

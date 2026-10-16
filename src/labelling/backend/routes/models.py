@@ -9,7 +9,8 @@ import httpx
 from fastapi import APIRouter, HTTPException
 
 from common import database, get_project
-from routes.training import _agent_url, _archive
+from routes.training import _agent_url
+from services.datasets import _archive
 from services.agent_polling import reconnect
 
 router = APIRouter()
