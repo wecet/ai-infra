@@ -51,3 +51,22 @@ LAKEFS_STORAGE_NAMESPACE=local://datasets
     assert upload[2]['headers']['Content-Type'] == 'application/octet-stream'
     commit = next(call for call in calls if call[0] == 'post' and call[1].endswith('/commits'))
     assert commit[2]['json']['message'] == 'Saving v1 at 12-09-26 by owen'
+
+
+def test_path_upload_is_chunked_and_stream_closed(monkeypatch, tmp_path):
+    for key, value in {'LAKEFS_ENDPOINT':'http://test', 'LAKEFS_ACCESS_KEY_ID':'access', 'LAKEFS_SECRET_ACCESS_KEY':'secret', 'LAKEFS_REPOSITORY':'datasets','LAKEFS_BRANCH':'main'}.items(): monkeypatch.setenv(key,value)
+    path = tmp_path / 'image.png'; path.write_bytes(b'x' * 200000)
+    chunks = []
+    class Client:
+        def __init__(self, **kwargs): pass
+        def __enter__(self): return self
+        def __exit__(self, *_): pass
+        def get(self, *_): return Response()
+        def post(self, url, **kwargs):
+            if url.endswith('/objects'):
+                assert kwargs['headers']['Content-Length'] == '200000'
+                chunks.extend(kwargs['content'])
+            return Response(body={'id':'commit'})
+    monkeypatch.setattr(lakefs_client.httpx,'Client',Client)
+    lakefs_client.push_snapshot([('image.png', path, 'image/png')], 'message', {})
+    assert b''.join(chunks) == b'x'*200000 and max(map(len,chunks)) <= 65536
