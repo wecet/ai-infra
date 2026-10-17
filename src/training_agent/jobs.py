@@ -87,6 +87,10 @@ class Cancelled(Exception):
     pass
 
 
+def check_cancelled(root, job_id):
+    if status(root, job_id)['status'] == 'cancelling': raise Cancelled('Cancelled by user')
+
+
 def cancel(root, job_id):
     with _lock:
         value = status(root, job_id)
@@ -142,7 +146,7 @@ def run(root, job_id, handler):
             value = status(root, job_id)
             cancelled = value['status'] == 'cancelling'
             value.update(status='cancelled' if cancelled else 'failed', phase='cancelled' if cancelled else 'failed',
-                completed_at=now(), error='' if cancelled else str(detail)[:2000])
+                completed_at=now(), error='' if cancelled else str(detail)[:2000], error_status=getattr(error, 'status_code', 500))
             write(directory / 'status.json', value)
     finally:
         finished.set()

@@ -94,6 +94,11 @@ def test_workbench_logs_persist_and_job_paths_are_validated(tmp_path, monkeypatc
     monkeypatch.setattr(app, "TENSORBOARD_URL", "http://localhost:6006")
     monkeypatch.setattr(app, "find_workbench", lambda key: {"task": "image_classification"})
     monkeypatch.setattr(app, "load_model", lambda workbench: LoggingModel)
+    def execute_fake(manifest, directory, report):
+        with (directory / 'dataset.zip').open('rb') as stream:
+            from fastapi import UploadFile
+            return app.train_model(json.dumps(manifest), UploadFile(file=stream), report, binary=True)
+    monkeypatch.setattr(app, 'execute_training', execute_fake)
     client = TestClient(app.app)
     assert client.get("/api/v1/capabilities").json()["tensorboard"] == {"available": True, "url": "http://localhost:6006"}
     manifest = {"job_id": "run-123", "run_name": "261010-test-v1", "annotation_type": "image_classification", "base_model": "workspace:test",
@@ -129,6 +134,11 @@ def test_trainer_failure_returns_details_and_agent_remains_usable(tmp_path, monk
     monkeypatch.setattr(app, "RUNS_ROOT", tmp_path / "runs")
     monkeypatch.setattr(app, "find_workbench", lambda key: {"task": "image_classification"})
     monkeypatch.setattr(app, "load_model", lambda workbench: FailingModel)
+    def execute_fake(manifest, directory, report):
+        with (directory / 'dataset.zip').open('rb') as stream:
+            from fastapi import UploadFile
+            return app.train_model(json.dumps(manifest), UploadFile(file=stream), report, binary=True)
+    monkeypatch.setattr(app, 'execute_training', execute_fake)
     client = TestClient(app.app)
     manifest = {"job_id": "failed-run", "annotation_type": "image_classification", "base_model": "workspace:test",
                 "devices": ["cpu"], "config": {"dataset_path": "/dataset.zip", "output_path": "/output",
@@ -309,3 +319,39 @@ def test_augmentation_preview_uses_real_transform_and_preserves_seed(tmp_path, m
     second = preview(manifest, io.BytesIO(raw.getvalue()), lambda _: workbench, lambda _: Model)
     assert first == second and torch.equal(torch.random.get_rng_state(), state)
     assert first['boxes'][0]['x'] == 5 and first['boxes'][0]['width'] == 2
+
+
+def test_async_baseline_runs_in_fresh_process_and_keeps_binary_result(tmp_path, monkeypatch):
+    import time
+    monkeypatch.setattr(app, 'RUNS_ROOT', tmp_path / 'runs')
+    manifest = {'job_id': 'isolated-baseline', 'annotation_type': 'image_classification',
+        'base_model': 'histogram-centroid-v1', 'config': {'dataset_path':'/dataset.zip', 'output_path':'/output',
+        'project_id':'p','dataset_version_id':'v','class_names':['coral']}}
+    with TestClient(app.app) as client:
+        accepted = client.post('/api/v1/jobs', data={'manifest': json.dumps(manifest)}, files={'dataset': ('data.zip', dataset_zip())})
+        assert accepted.status_code == 202
+        deadline = time.monotonic() + 15
+        while True:
+            state = client.get('/api/v1/jobs/isolated-baseline').json()
+            if state['status'] in ('succeeded', 'failed'): break
+            assert time.monotonic() < deadline
+            time.sleep(.1)
+        assert state['status'] == 'succeeded', state
+        assert client.get('/api/v1/jobs/isolated-baseline/artifact').status_code == 200
+        assert (app.jobs_root() / 'isolated-baseline' / 'worker-result.json').is_file()
+
+
+def test_discovery_is_single_flight(tmp_path, monkeypatch):
+    import workbenches
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+    (tmp_path / 'ai-workbench.json').write_text('{}')
+    calls = []
+    def inspect(path):
+        calls.append(path); time.sleep(.05)
+        return {'available': True}
+    monkeypatch.setattr(workbenches, '_manifest', inspect)
+    monkeypatch.setattr(workbenches, '_CACHE', {})
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(lambda _: workbenches.discover_workbenches(tmp_path), range(4)))
+    assert len(calls) == 1 and all(value == results[0] for value in results)
