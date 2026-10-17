@@ -37,7 +37,7 @@ Anomaly version manifests freeze each image's `train` or `test` assignment. Supe
 
 ## Practical limits that inform the roadmap
 
-- Agent jobs persist progress and results and Studio reattaches after restart. Agent execution still uses in-process worker threads: agent restart reports interruption; cooperative cancellation is available; checkpoint resume remains future work.
+- Agent jobs persist progress and results and Studio reattaches after restart. The lightweight agent runs each model in a short-lived subprocess to release its framework memory: agent restart reports interruption; cooperative cancellation is available; checkpoint resume remains future work.
 - Remote compute is selected by endpoint; there is no agent fleet scheduler or resource reservation system.
 - Saved models now expose held-out predictions, metrics and examples in a dialog. Run comparison, example filtering and pagination, anomaly threshold exploration and model-linked review are available. A general inference playground and configurable metric policies remain future work.
 - Registered-model and deployment lineage records do not constitute a managed model-serving lifecycle with rollout and rollback controls.
