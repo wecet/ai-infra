@@ -145,3 +145,5 @@ New publications freeze supervised fitting/validation/test membership. Training 
 Use Explore for metadata and duplicate filters, Dashboard for readiness and annotation import mappings, and the image picker for selective import previews with failed-file retry. Training can preview an installed workbench's augmentations with a seed and transformed boxes. Lineage supports search, collapsed stages and ancestry selection; Activity attributes project mutations to users.
 
 See [the enhancement branch stack](docs/enhancement-stack.md), [training details](docs/training-jobs-and-evaluation.md), and [backup/restore](docs/migration.md). These source features are not a new published platform release.
+
+The local stack now has configurable RAM ceilings and a single MLflow web worker. Training/evaluation use short-lived model processes so framework memory is released after each job. Larger models may need a higher `TRAINING_MEMORY_LIMIT`; see [RAM configuration](docs/deployment.md#ram-use-on-local-machines).

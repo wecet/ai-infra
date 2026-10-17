@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import zipfile
 import uuid
 from pathlib import Path
@@ -151,7 +152,23 @@ def _detection(coco, root):
 
 @app.post("/api/v1/train")
 def train(manifest: str = Form(...), dataset: UploadFile = File(...)):
-    return train_model(manifest, dataset)
+    try: value = json.loads(manifest)
+    except ValueError as error: raise HTTPException(422, 'Invalid training manifest') from error
+    if not isinstance(value, dict): raise HTTPException(422, 'Invalid training manifest')
+    value.setdefault('job_id', uuid.uuid4().hex)
+    value = request_manifest(json.dumps(value)); value['kind'] = 'training'
+    scratch = RUNS_ROOT / '.sync'; scratch.mkdir(parents=True, exist_ok=True)
+    # Legacy callers still get a synchronous/base64 response, but use the same
+    # bounded queue and short-lived framework workers as asynchronous clients.
+    with tempfile.TemporaryDirectory(prefix='request-', dir=scratch) as temporary:
+        root = Path(temporary)
+        agent_jobs.start(root, value['job_id'], value, dataset.file, execute_training)
+        while True:
+            state = agent_jobs.status(root, value['job_id'])
+            if state['status'] == 'succeeded': return agent_jobs.result(root, value['job_id'])
+            if state['status'] in ('failed', 'cancelled'):
+                raise HTTPException(state.get('error_status', 500), state.get('error') or 'Training cancelled')
+            time.sleep(.1)
 
 
 def file_digest(path):
@@ -246,14 +263,23 @@ def train_model(manifest, dataset, report=None, binary=False):
     finally: shutil.rmtree(work, ignore_errors=True)
 
 
+def execute_model(manifest, directory, report, kind):
+    from isolated_worker import execute
+    key = manifest.get('base_model', '')
+    workbench = find_workbench(key) if key.startswith('workspace:') else None
+    if key.startswith('workspace:') and not workbench:
+        raise HTTPException(422, 'Model workbench is unavailable on this compute agent')
+    # Pass trusted metadata, never Python/model objects: the child need not
+    # launch more catalog inspectors before importing the selected model.
+    return execute({**manifest, 'kind': kind, '_workbench': workbench}, directory, report, RUNS_ROOT)
+
+
 def execute_training(manifest, directory, report):
-    with (directory / "dataset.zip").open("rb") as stream:
-        return train_model(json.dumps(manifest), UploadFile(filename="dataset.zip", file=stream), report, binary=True)
+    return execute_model(manifest, directory, report, 'training')
 
 
 def execute_evaluation(manifest, directory, report):
-    from evaluation import evaluate
-    return evaluate(manifest, directory, report, find_workbench, load_model)
+    return execute_model(manifest, directory, report, 'evaluation')
 
 
 def request_manifest(manifest):

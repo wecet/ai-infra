@@ -60,7 +60,7 @@ _version_content = dataset_service._version_content
 @router.get('/api/projects/{project_id}/versions/{version_id}/export')
 def export_version(project_id: str, version_id: str):
     detail = version_detail(project_id, version_id)
-    archive_name, _, objects = _version_content(project_id, version_id, detail)
+    archive_name, _, objects = _version_content(project_id, version_id, detail, lazy=True)
     fd, temp_path = tempfile.mkstemp(suffix='.zip')
     os.close(fd)
     try:
@@ -68,7 +68,8 @@ def export_version(project_id: str, version_id: str):
             archive.writestr('annotations/', b'')
             archive.writestr('images/', b'')
             for path, content, _ in objects:
-                archive.writestr(path, content)
+                if isinstance(content, Path): archive.write(content, path)
+                else: archive.writestr(path, content)
     except Exception:
         Path(temp_path).unlink(missing_ok=True)
         raise
@@ -79,7 +80,7 @@ def export_version(project_id: str, version_id: str):
 @router.post('/api/projects/{project_id}/versions/{version_id}/lakefs')
 def push_version_to_lakefs(project_id: str, version_id: str, request: Request):
     detail = version_detail(project_id, version_id)
-    archive_name, _, objects = _version_content(project_id, version_id, detail)
+    archive_name, _, objects = _version_content(project_id, version_id, detail, lazy=True)
     username = request.state.user['username']
     date = datetime.now(timezone.utc).strftime('%d-%m-%y')
     message = f"Saving {detail['name']} at {date} by {username}"

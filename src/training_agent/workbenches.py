@@ -19,6 +19,9 @@ KEY = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 SKIP = {".git", ".venv", "venv", "node_modules", "dist", "build", "__pycache__"}
 _CACHE = {}
 _CACHE_LOCK = threading.Lock()
+_SCAN_LOCK = threading.Lock()
+INSPECTION_TIMEOUT = max(1, float(os.getenv("TRAINING_WORKBENCH_INSPECTION_TIMEOUT", "30")))
+CACHE_SECONDS = max(1, float(os.getenv("TRAINING_WORKBENCH_CACHE_SECONDS", "300")))
 
 INSPECTOR = r'''
 import importlib.util, inspect, json, sys
@@ -53,7 +56,7 @@ def _manifest(directory):
         source.relative_to(directory.resolve())
         if not source.is_file(): raise ValueError(f"entrypoint file {filename} does not exist")
         result = subprocess.run([sys.executable, "-I", "-c", INSPECTOR, str(source), symbol],
-                                capture_output=True, text=True, timeout=8, cwd=directory)
+                                capture_output=True, text=True, timeout=INSPECTION_TIMEOUT, cwd=directory)
         if result.returncode: raise ValueError((result.stderr.strip().splitlines() or ["inspection failed"])[-1])
         inspected = json.loads(result.stdout)
         descriptor = inspected["descriptor"]
@@ -64,18 +67,27 @@ def _manifest(directory):
         return {**descriptor, "key": key, "workspace": directory.name, "path": str(directory),
                 "entrypoint": entrypoint, "config_schema": inspected["config_schema"], "available": True}
     except (OSError, ValueError, KeyError, json.JSONDecodeError, subprocess.TimeoutExpired) as exc:
+        if isinstance(exc, subprocess.TimeoutExpired):
+            exc = ValueError(f'Workbench inspection exceeded {INSPECTION_TIMEOUT:g}s; increase TRAINING_WORKBENCH_INSPECTION_TIMEOUT for slow imports')
         return {"key": f"invalid:{directory.name}", "name": directory.name, "task": "unknown",
                 "description": "Workbench could not be loaded", "workspace": directory.name,
                 "path": str(directory), "available": False, "reason": str(exc)[:500], "config_schema": {}}
 
 
 def discover_workbenches(root=ROOT, refresh=False):
+    # A capability request must not launch another set of heavy model importers
+    # while a preceding request is still refreshing the same catalog.
+    with _SCAN_LOCK:
+        return _discover_workbenches(root, refresh)
+
+
+def _discover_workbenches(root=ROOT, refresh=False):
     root = Path(root).resolve()
     if not root.is_dir(): return []
     cache_key = str(root)
     with _CACHE_LOCK:
         cached = _CACHE.get(cache_key)
-        if cached and not refresh and time.monotonic() - cached[0] < 30: return cached[1]
+        if cached and not refresh and time.monotonic() - cached[0] < CACHE_SECONDS: return cached[1]
     markers = []
     for current, directories, files in os.walk(root):
         relative = Path(current).relative_to(root)

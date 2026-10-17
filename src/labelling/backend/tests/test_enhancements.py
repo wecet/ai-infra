@@ -136,3 +136,21 @@ def test_annotation_preview_reports_class_mapping_without_changes(client):
     assert response.status_code == 200, response.text
     assert not response.json()['can_import'] and response.json()['class_mapping'][0]['target'] is None
     assert client.get(f'/api/projects/{pid}/images').json() == before
+
+
+def test_export_and_lakefs_publish_stream_frozen_image_files(client, monkeypatch):
+    from pathlib import Path
+    pid = project(client)
+    image = upload(client, pid); save(client, pid, image, boxes=[])
+    version = client.post(f'/api/projects/{pid}/publish').json()['id']
+    original = Path.read_bytes
+    def guarded(path):
+        assert 'versions' not in path.parts, 'Do not read all frozen images into RAM'
+        return original(path)
+    monkeypatch.setattr(Path, 'read_bytes', guarded)
+    assert client.get(f'/api/projects/{pid}/versions/{version}/export').status_code == 200
+    def push(objects, *args):
+        assert all(isinstance(content, Path) for name, content, _ in objects if '/images/' in name)
+        return {'commit_id':'streamed','repository':'datasets','branch':'main'}
+    monkeypatch.setattr(service.versions.lakefs_client, 'push_snapshot', push)
+    assert client.post(f'/api/projects/{pid}/versions/{version}/lakefs').status_code == 200

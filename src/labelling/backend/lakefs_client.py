@@ -1,5 +1,6 @@
 """Small lakeFS API client for publishing immutable labelling snapshots."""
 import os
+from contextlib import nullcontext
 from pathlib import Path
 from urllib.parse import quote
 
@@ -44,9 +45,12 @@ def push_snapshot(objects, message, metadata):
             response.raise_for_status()
             object_url = f'{repo_url}/branches/{quote(branch, safe="")}/objects'
             for path, content, _content_type in objects:
-                response = client.post(object_url, params={'path': path}, content=content,
-                                       headers={'Content-Type': 'application/octet-stream'})
-                response.raise_for_status()
+                with (content.open('rb') if isinstance(content, Path) else nullcontext(None)) as stream:
+                    payload = iter(lambda: stream.read(65536), b'') if stream is not None else content
+                    headers = {'Content-Type': 'application/octet-stream'}
+                    if isinstance(content, Path): headers['Content-Length'] = str(content.stat().st_size)
+                    response = client.post(object_url, params={'path': path}, content=payload, headers=headers)
+                    response.raise_for_status()
             response = client.post(f'{repo_url}/branches/{quote(branch, safe="")}/commits',
                                    json={'message': message, 'metadata': metadata})
             response.raise_for_status()
